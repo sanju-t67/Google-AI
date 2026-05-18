@@ -1,0 +1,64 @@
+{
+  "entities": {
+    "Employee": {
+      "title": "Employee",
+      "description": "Employee profile and equity data",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "mobile": { "type": "string" },
+        "name": { "type": "string" },
+        "department": { "type": "string" },
+        "designation": { "type": "string" },
+        "joinDate": { "type": "string", "format": "date" },
+        "grantDate": { "type": "string", "format": "date" },
+        "grants": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "transactions": {
+          "type": "array",
+          "items": { "type": "object" }
+        }
+      },
+      "required": ["id", "email", "name"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Administrator account",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin"] }
+      },
+      "required": ["email", "name", "role"]
+    },
+    "CompanySettings": {
+      "title": "Company Settings",
+      "description": "Global company settings and valuation data",
+      "type": "object",
+      "properties": {
+        "currentFMV": { "type": "number" },
+        "totalPool": { "type": "number" },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      },
+      "required": ["currentFMV", "totalPool"]
+    }
+  },
+  "firestore": {
+    "/employees/{employeeId}": {
+      "schema": "Employee",
+      "description": "Root collection for employee data"
+    },
+    "/admins/{adminId}": {
+      "schema": "Admin",
+      "description": "Root collection for admin data"
+    },
+    "/settings/company": {
+      "schema": "CompanySettings",
+      "description": "Global company settings document"
+    }
+  }
+}
