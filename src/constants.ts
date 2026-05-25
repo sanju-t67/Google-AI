@@ -8,7 +8,7 @@ import { Admin, Employee } from "./types";
 export const MOCK_ADMINS: Admin[] = [
   { email: "admin@teachmint.com", password: "admin123", name: "Priya Sharma", role: "admin" },
   { email: "hr@teachmint.com", password: "hr1234", name: "Rahul Mehta", role: "admin" },
-  { email: "sanju.ts@teachmint.com", password: "emp1234", name: "Sanju", role: "admin" },
+  { email: "sanju.ts@teachmint.com", password: "admin123", name: "Sanju", role: "admin" },
 ];
 
 export const MOCK_EMPLOYEES: Employee[] = [

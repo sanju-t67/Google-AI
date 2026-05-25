@@ -13,6 +13,7 @@ import { Moon, Sun } from "lucide-react";
 import { auth } from "./lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { MOCK_ADMINS, MOCK_EMPLOYEES } from "./constants";
+import { AnimatePresence, motion } from "motion/react";
 
 function ThemeToggle({ isDark, toggle }: { isDark: boolean, toggle: () => void }) {
   return (
@@ -47,30 +48,72 @@ function AppContent() {
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      if (firebaseUser?.email) {
-        // Try to find in mocks to maintain state on refresh
-        const admin = MOCK_ADMINS.find(a => a.email.toLowerCase() === firebaseUser.email?.toLowerCase());
-        if (admin) {
-          setSession({ user: admin, role: "admin" });
-          return;
-        }
-
-        const emp = MOCK_EMPLOYEES.find(e => e.email.toLowerCase() === firebaseUser.email?.toLowerCase());
-        if (emp) {
-          setSession({ user: emp, role: "employee" });
-          return;
-        }
+    let unsubscribe: (() => void) | undefined;
+    
+    const initAndSubscribeObj = async () => {
+      try {
+        const { initializeAndSeedDatabase } = await import("./services/dataService");
+        await initializeAndSeedDatabase();
+      } catch (e) {
+        console.error("Failed to seed database on startup:", e);
       }
-      // If no firebase user or not in mocks, don't clear session if it was set via manual login
-      // but if we want strictly firebase auth, we could clear it.
-      // For now, let's allow manual login to persist in memory but Firebase only on refresh.
-    });
-    return () => unsubscribe();
+
+      // Pre-load session from local storage for instant access
+      try {
+        const cached = localStorage.getItem("user_session");
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && parsed.user && parsed.role) {
+            setSession(parsed);
+          }
+        }
+      } catch (err) {
+        console.error("Local session recovery failed:", err);
+      }
+
+      unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+        if (firebaseUser?.email) {
+          const email = firebaseUser.email;
+          const { getAdminByEmail, getEmployeeByEmail } = await import("./services/dataService");
+          
+          try {
+            const adminObj = await getAdminByEmail(email);
+            if (adminObj) {
+              const sess = { user: adminObj, role: "admin" as const };
+              setSession(sess);
+              localStorage.setItem("user_session", JSON.stringify(sess));
+              return;
+            }
+          } catch (e) {
+            console.error("Failed to query DB for admin session restore:", e);
+          }
+
+          try {
+            const empObj = await getEmployeeByEmail(email);
+            if (empObj) {
+              const sess = { user: empObj, role: "employee" as const };
+              setSession(sess);
+              localStorage.setItem("user_session", JSON.stringify(sess));
+              return;
+            }
+          } catch (e) {
+            console.error("Failed to query DB for employee session restore:", e);
+          }
+        }
+      });
+    };
+
+    initAndSubscribeObj();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   const handleLogin = (user: Employee | Admin, role: "employee" | "admin") => {
-    setSession({ user, role });
+    const sess = { user, role };
+    setSession(sess);
+    localStorage.setItem("user_session", JSON.stringify(sess));
     if (role === "admin") {
       navigate("/admin");
     } else {
@@ -79,7 +122,8 @@ function AppContent() {
   };
 
   const handleLogout = () => {
-    auth.signOut();
+    localStorage.removeItem("user_session");
+    auth.signOut().catch(() => {});
     setSession(null);
     navigate("/");
   };
@@ -95,26 +139,63 @@ function AppContent() {
   return (
     <>
       <ThemeToggle isDark={isDarkMode} toggle={toggleTheme} />
-      <Routes>
-        <Route path="/" element={<LoginPage onLogin={handleLogin} />} />
-        <Route 
-          path="/employee" 
-          element={
-            session?.role === "employee" 
-              ? <EmployeeDashboard user={session.user as Employee} onLogout={handleLogout} /> 
-              : <Navigate to="/" />
-          } 
-        />
-        <Route 
-          path="/admin" 
-          element={
-            session?.role === "admin" 
-              ? <AdminDashboard user={session.user as Admin} onLogout={handleLogout} /> 
-              : <Navigate to="/" />
-          } 
-        />
-        <Route path="*" element={<Navigate to="/" />} />
-      </Routes>
+      <AnimatePresence mode="wait">
+        <motion.div 
+          key={location.pathname}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="contents"
+        >
+          <Routes location={location}>
+            <Route path="/" element={
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }} 
+                animate={{ opacity: 1, x: 0 }} 
+                exit={{ opacity: 0, x: 20 }}
+                transition={{ duration: 0.3 }}
+              >
+                <LoginPage onLogin={handleLogin} />
+              </motion.div>
+            } />
+          <Route 
+            path="/employee" 
+            element={
+              session?.role === "employee" 
+                ? (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 20 }} 
+                    animate={{ opacity: 1, y: 0 }} 
+                    exit={{ opacity: 0, y: -20 }}
+                    transition={{ duration: 0.4 }}
+                  >
+                    <EmployeeDashboard user={session.user as Employee} onLogout={handleLogout} />
+                  </motion.div>
+                )
+                : <Navigate to="/" />
+            } 
+          />
+          <Route 
+            path="/admin" 
+            element={
+              session?.role === "admin" 
+                ? (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.98 }} 
+                    animate={{ opacity: 1, scale: 1 }} 
+                    exit={{ opacity: 0, scale: 1.02 }}
+                    transition={{ duration: 0.4 }}
+                  >
+                    <AdminDashboard user={session.user as Admin} onLogout={handleLogout} />
+                  </motion.div>
+                )
+                : <Navigate to="/" />
+            } 
+          />
+          <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
+      </motion.div>
+    </AnimatePresence>
     </>
   );
 }

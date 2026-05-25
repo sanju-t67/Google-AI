@@ -15,67 +15,94 @@ export const fmtDate = (d: string | undefined) =>
 
 export const pct = (a: number, b: number) => b ? Math.round((a / b) * 100) : 0;
 
-export function calculateLiveVested(grant: Grant): number {
-  const start = new Date(grant.grantDate);
-  const now = new Date();
-  const diffMonths = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
-  
-  if (diffMonths <= 0) return 0;
-
-  const isQuarterly = grant.vestingSchedule.toLowerCase().includes("quarterly");
-  const hasCliff = grant.vestingSchedule.toLowerCase().includes("cliff");
-
-  // Handle Cliff (usually 1 year)
-  if (hasCliff && diffMonths < 12) {
-    return 0;
-  }
-
-  // Common pattern: 4 years (48 months or 16 quarters)
-  const isFourYear = grant.vestingSchedule.toLowerCase().includes("4yr") || 
-                     grant.vestingSchedule.toLowerCase().includes("4 year") ||
-                     grant.vestingSchedule.toLowerCase().includes("4year");
-
-  if (isFourYear) {
-    if (isQuarterly) {
-      const quarters = Math.floor(diffMonths / 3);
-      // Even if it's 16 quarters, we cap it
-      const quarterlyRate = grant.totalShares / 16;
-      return Math.min(grant.totalShares, Math.floor(quarters * quarterlyRate));
-    } else {
-      const monthlyRate = grant.totalShares / 48;
-      return Math.min(grant.totalShares, Math.floor(diffMonths * monthlyRate));
-    }
-  }
-  
-  if (isQuarterly) {
-    const quarters = Math.floor(diffMonths / 3);
-    const quarterlyRate = grant.totalShares / 16; // Default to 4 years if unspecified
-    return Math.min(grant.totalShares, Math.floor(quarters * quarterlyRate));
-  }
-
-  return grant.vestedShares; // Default to manual if unrecognized
+export function calculateLiveVested(grant: Grant, joinDate?: string, cliffType?: "Quarterly" | "Half Yearly" | "Annually"): number {
+  const schedule = generateVestingSchedule(joinDate || grant.grantDate, grant.totalShares, cliffType);
+  const vestedMilestones = schedule.filter(m => m.status === "Vested");
+  if (vestedMilestones.length === 0) return 0;
+  return vestedMilestones[vestedMilestones.length - 1].totalVested;
 }
 
-export function calcPortfolioValue(grants: Grant[], fmvOverride?: number) {
+export function calcPortfolioValue(grants: Grant[], fmvOverride?: number, joinDate?: string, cliffType?: "Quarterly" | "Half Yearly" | "Annually") {
   return grants.reduce((sum, g) => {
-    const vested = calculateLiveVested(g);
+    const vested = calculateLiveVested(g, joinDate, cliffType);
     const fmv = fmvOverride ?? g.currentFMV;
     return sum + (vested - g.exercisedShares) * fmv;
   }, 0);
 }
 
-export function calcPotentialGain(grants: Grant[], fmvOverride?: number) {
+export function calcPotentialGain(grants: Grant[], fmvOverride?: number, joinDate?: string, cliffType?: "Quarterly" | "Half Yearly" | "Annually") {
   return grants.reduce((sum, g) => {
-    const vested = calculateLiveVested(g);
+    const vested = calculateLiveVested(g, joinDate, cliffType);
     const fmv = fmvOverride ?? g.currentFMV;
     return sum + (vested - g.exercisedShares) * (fmv - g.strikePrice);
   }, 0);
 }
 
-export function calcTotalVested(grants: Grant[]) {
-  return grants.reduce((sum, g) => sum + calculateLiveVested(g), 0);
+export function calcTotalVested(grants: Grant[], joinDate?: string, cliffType?: "Quarterly" | "Half Yearly" | "Annually") {
+  return grants.reduce((sum, g) => sum + calculateLiveVested(g, joinDate, cliffType), 0);
 }
 
 export function calcTotalGranted(grants: Grant[]) {
   return grants.reduce((sum, g) => sum + g.totalShares, 0);
+}
+
+export interface VestingEvent {
+  date: string;
+  toVest: number;
+  totalVested: number;
+  status: "Vested" | "Upcoming";
+}
+
+export function generateVestingSchedule(
+  joinDate: string,
+  totalShares: number,
+  cliffType?: "Quarterly" | "Half Yearly" | "Annually",
+  currentDateStr?: string
+): VestingEvent[] {
+  const start = new Date(joinDate || new Date().toISOString());
+  const events: VestingEvent[] = [];
+  const now = currentDateStr ? new Date(currentDateStr) : new Date();
+
+  // Define cliff duration in months
+  let cliffMonths = 12; // default Annually
+  if (cliffType === "Quarterly") {
+    cliffMonths = 3;
+  } else if (cliffType === "Half Yearly") {
+    cliffMonths = 6;
+  }
+
+  // standard ESOP 4 year plan = 16 quarters (each quarter = 3 months)
+  let cumulative = 0;
+  const quarterlyShare = totalShares / 16;
+
+  for (let q = 1; q <= 16; q++) {
+    const monthsAfterStart = q * 3;
+    const eventDate = new Date(start);
+    eventDate.setMonth(start.getMonth() + monthsAfterStart);
+    
+    const dateStr = eventDate.toISOString().split('T')[0];
+
+    let toVest = quarterlyShare;
+    // Before cliff, accumulate shares and vest on the cliff date!
+    if (monthsAfterStart < cliffMonths) {
+      continue;
+    }
+
+    if (monthsAfterStart === cliffMonths) {
+      const accumulatedQuarters = cliffMonths / 3;
+      toVest = quarterlyShare * accumulatedQuarters;
+    }
+
+    cumulative += toVest;
+    const isVested = eventDate <= now;
+
+    events.push({
+      date: dateStr,
+      toVest: parseFloat(toVest.toFixed(2)),
+      totalVested: parseFloat(Math.min(totalShares, cumulative).toFixed(2)),
+      status: isVested ? "Vested" : "Upcoming"
+    });
+  }
+
+  return events;
 }

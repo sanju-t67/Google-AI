@@ -13,6 +13,7 @@ export interface Grant {
   currentFMV: number;
   vestingSchedule: string;
   status: "Active" | "Fully Vested" | "Expired";
+  cliffMonths?: number;
 }
 
 export interface Transaction {
@@ -36,6 +37,14 @@ export interface Employee {
   grantDate: string;
   grants: Grant[];
   transactions: Transaction[];
+  disabled?: boolean;
+  cliffType?: "Quarterly" | "Half Yearly" | "Annually";
+  nomineeName?: string;
+  nomineeRelation?: string;
+  nomineeContact?: string;
+  grantLetterNumber?: string;
+  customFields?: { key: string; value: string }[];
+  documents?: { id: string; name: string; url: string; uploadDate: string }[];
 }
 
 export interface Admin {
@@ -43,6 +52,14 @@ export interface Admin {
   password?: string;
   name: string;
   role: "admin";
+}
+
+export interface AuditLog {
+  id: string;
+  timestamp: string;
+  adminEmail: string;
+  action: string;
+  details: string;
 }
 
 export type UserSession = {
