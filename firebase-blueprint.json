@@ -45,6 +45,17 @@
         "lastUpdated": { "type": "string", "format": "date-time" }
       },
       "required": ["currentFMV", "totalPool"]
+    },
+    "PolicyChunk": {
+      "title": "Policy Chunk",
+      "description": "Chunked global policy file properties",
+      "type": "object",
+      "properties": {
+        "content": { "type": "string" },
+        "index": { "type": "number" },
+        "total": { "type": "number" }
+      },
+      "required": ["content", "index", "total"]
     }
   },
   "firestore": {
@@ -59,6 +70,10 @@
     "/settings/company": {
       "schema": "CompanySettings",
       "description": "Global company settings document"
+    },
+    "/policy_chunks/{chunkId}": {
+      "schema": "PolicyChunk",
+      "description": "Chunks for corporate policy"
     }
   }
 }

@@ -58,13 +58,23 @@ function AppContent() {
         console.error("Failed to seed database on startup:", e);
       }
 
-      // Pre-load session from local storage for instant access
+      // Pre-load session from local storage for instant access with automatic stale-user detection
       try {
         const cached = localStorage.getItem("user_session");
         if (cached) {
           const parsed = JSON.parse(cached);
           if (parsed && parsed.user && parsed.role) {
-            setSession(parsed);
+            const email = parsed.user.email?.toLowerCase();
+            const isValid = 
+              MOCK_ADMINS.some(a => a.email.toLowerCase() === email) ||
+              MOCK_EMPLOYEES.some(e => e.email.toLowerCase() === email);
+              
+            if (!isValid) {
+              console.log("Cached session is stale or obsolete. Purging...");
+              localStorage.removeItem("user_session");
+            } else {
+              setSession(parsed);
+            }
           }
         }
       } catch (err) {

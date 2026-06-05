@@ -13,6 +13,18 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /policy_chunks/{chunkId} {
+      allow read, write: if true;
+    }
+
+    match /sentEmails/{emailId} {
+      allow read, write: if true;
+    }
+
+    match /auditLogs/{logId} {
+      allow read, write: if true;
+    }
+
     match /test/{testId} {
       allow read, write: if true;
     }

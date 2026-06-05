@@ -1,175 +1,394 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, getDoc, getDocs, setDoc, deleteDoc, updateDoc, collection } from "firebase/firestore";
+import firebaseConfig from "./firebase-applet-config.json";
 import { MOCK_ADMINS, MOCK_EMPLOYEES } from "./src/constants";
 import { Employee, Admin, AuditLog } from "./src/types";
+
+// Initialize Firebase SDK
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+
+interface SentEmail {
+  id: string;
+  recipient: string;
+  name: string;
+  subject: string;
+  body: string;
+  sentAt: string;
+  role: "employee" | "admin";
+  password?: string;
+}
+
+const DEFAULT_SETTINGS = {
+  currentFMV: 210,
+  totalPool: 10000000,
+  roundingMode: "2-decimal" as const,
+  signatoryName: "Mihir Gupta",
+  signatoryEmail: "mihir.gupta@teachmint.com",
+  signatoryDesignation: "Co-Founder & CEO",
+  grantLetterSubject: "Letter of Grant under Employees’ Stock Option Plan 2020 (“ESOP 2020”)",
+  grantLetterBodyHeader: "LETTER OF GRANT\n\n\nDate: {{GRANT_DATE}}\n\n\nTo,\n{{STAKEHOLDER_NAME}}\nEmp ID - {{EMPLOYEE_ID}}\n\n\nDear {{STAKEHOLDER_NAME}},\n\n\nThe Committee of Teachmint ESOP 2020 has the pleasure in inviting you to participate in the Employees’ Stock Option Plan 2020(“ESOP 2020”) of {{COMPANY_NAME}}, a private limited company incorporated under the provisions of the Companies Act, 2013 and having its registered office at {{COMPANY_ADDRESS}}, having corporate identification number as {{COMPANY_CIN}}.\n\n\nBy virtue of the ESOP 2020, you are being offered the Options convertible into equity shares.\n\n\nThe details of number of Options granted, vesting date, exercise date, exercise price and manner of exercising the Options and other terms and conditions are given in Form I.\n\n\nThe offer shall lapse if not accepted on or before the closing date mentioned in Form I. If the offer is acceptable to you, kindly sign the Acceptance Form (enclosed as Form II) in token of your acceptance.\n\n\nYou are requested to study the same carefully and familiarize yourself with the scheme enclosed. Thanking you,\nYours faithfully,\n\n\nFor {{COMPANY_NAME}},\n  \n\nCaptured via Leegality.com (01JV5DYQGH8MRXGTFWYAQM6BFW) {{SIGNATORY_NAME}}\nDate: Wed May 28 13:26:58 IST 2025\n\n\n{{SIGNATORY_NAME}} Encl: As above\nForm I\n\n\nName in Full: {{STAKEHOLDER_NAME}}\n\t\n\n\tI. Grant Details\n\tTotal Options Granted\n\t{{SHARES_QUANTITY}}\n\tDate of Grant\n\t{{GRANT_DATE}}\n\tExercise Price per Share\n\t{{STRIKE_PRICE}}\n\tII. Vesting Details\n\tVesting\n\t{{SHARES_QUANTITY}} number of Options will vest as per the schedule below:\n\t\n\nPlease find below the vesting schedule corresponding to this grant:\n\n{{VESTING_SCHEDULE_TABLE}}",
+  grantLetterBodyFooter: "Terms a nd conditions:\n\n\n1. Hereinafter, the employees to whom this Letter of Grant is issued shall be referred to as “Option Grantee”.\n\n\n2. The Options granted are personal to the Option Grantee and cannot be transferred in any manner whatsoever.\n\n\n3. Each Option will entitle the participant to one equity share of the Company and Options issued to the Option Grantee shall always be convertible into equity shares only.\n\n\n4. Unless otherwise expressly defined in this Letter of Grant, all capitalised terms shall have the same meaning assigned to it in the ESOP 2020.\n\n\n5. Option Grantee, who wishes to accept an offer made must deliver duly filled Acceptance Form (enclosed as Form II) at the registered office of the Company addressed to The ESOP Committee on or before 14 days from the Date of Grant. Further, Option Grantee shall mention his/her name and address precisely in the Acceptance Form.\n\n\n6. Option Grantee, who fails to return the Acceptance Form on or before the closing date is deemed to have rejected the offer and Acceptance Form received after the closing date shall not be valid unless the Board determines otherwise.\n\n\n7. Options granted shall vest as per the vesting details set forth above.\n\n\n8. The Option Grantee shall not have right to receive any dividend or to vote or in any manner or enjoy the benefits of a shareholder in respect of Options granted to him, till shares are issued on Exercise of the Option.\n\n\n9. For the purpose of Exercise, Option Grantee must deliver duly filled Exercise Form (enclosed as Form III) in writing along with exercise price of {{STRIKE_PRICE}} per Option by enclosing cheque in favour of {{COMPANY_NAME}} on or before aforementioned at the time of Exercise addressed to The ESOP Committee at the registered office of the Company or a demand draft drawn in favor of the Company or in such other manner as the Board may decide.\n\n\n10. The Committee shall verify and accordingly communicate to the Option Grantee about valid Exercise.\n\n\n11. The Option Grantee may nominate any Beneficiary to whom any benefit under the ESOP 2020 is to be delivered in case of Option Grantee’s death or Permanent Incapacitation, before he or she receives all of such benefit by delivering Nomination Form (enclosed as Form IV) to the Company at the registered office of the Company addressed to The ESOP Committee.\n\n\n12. For other terms and conditions relating to eligibility of employees, administration of the ESOP 2020, granting of Options, method of acceptance, vesting of Options, exercise price, exercise of Options (including exercise period), termination of employment, notices and correspondence, nomination, non-transferability of Options, corporate action, arbitration, regulatory approvals, miscellaneous provisions, modification of the ESOP 2020 and term of the ESOP 2020, the Option Grantee is requested to study and familiarize with the ESOP 2020 enclosed.\n\n\n13. Any Options granted hereunder is subject to the condition that the Option Grantee remains employed by the Company from the time of the grant through the end of the Vesting Period, unless as otherwise provided herein. However, neither such condition nor the grant of Options shall impose upon the Company any obligation to retain the Option Grantee in its employment for any given period or upon any specific terms of employment.\n\n\nForm II ACCEPTANCE FORM\n\n\n\n\nFrom: {{STAKEHOLDER_NAME}}\n\n\nTo,\nThe ESOP Committee,\nEmployees’ Stock Option Plan 2020, {{COMPANY_NAME}},\n{{COMPANY_ADDRESS}}.\n\n\nThis is with reference to the Letter of Grant dated {{GRANT_DATE}} issued under the Employees’ Stock Option Plan 2020 (“ESOP 2020”) of {{COMPANY_NAME}}.\n\n\nI have read the terms and conditions stipulated in the Letter of Grant and the ESOP 2020 and wish to subscribe to {{SHARES_QUANTITY}} Options granted to me.\n\n\nI undertake to be bound by the terms and conditions of the ESOP 2020 which I confirm to have understood fully.\n\n\nYours faithfully,\n  \n\nCaptured via Leegality.com (01JV5DYQGH8MRXGTFWYAQM6BFW) {{STAKEHOLDER_NAME}}\nDate: Fri May 30 11:18:16 IST 2025\n\n\n{{STAKEHOLDER_NAME}}",
+  grantLetterCompanyName: "Teachmint Technologies Private Limited",
+  grantLetterCompanyAddress: "5th Floor, North Wing, SJR The HUB, Survey No. 8/2 & 9, Sarjapur Road, Bengaluru, Karnataka - 560103",
+  grantLetterCompanyCIN: "U62099KA2020PTC135305",
+  defaultEsopPolicyFileName: "Teachmint_Global_ESOP_Policy_2025.pdf",
+  defaultEsopPolicyFileUrl: "data:text/plain;base64,VEVBQ0hNSU5UIEdMT0JBTCBFU09QIFBPTElDWSAyMDI1CgpUaGlzIGlzIHRoZSBvZmZpY2lhbCBUZWFjaG1pbnQgR2xvYmFsIEVTT1AgUG9saWN5IGZvciAyMDI1LiBBbGwgZW1wbG95ZWVzIGFyZSBzdWJqZWN0IHRvIHRoZSBndWlkZWxpbmVzLCBjbGlmZiByZXMtc3RyYXRlZ2llcywgYW5kIGV4ZXJjaXNlIHBlcmlvZHMgZGVmaW5lZCBoZXJlaW4u",
+  googleDocUrl: "https://docs.google.com/document/d/1Q396bGnmJ84f-duN7KHdoGlL4aTUkAemM1GDT71ucgA/edit?usp=sharing",
+  lastUpdated: new Date().toISOString()
+};
+
+async function seedDatabaseIfEmpty() {
+  try {
+    console.log("Checking Firestore status for database auto-seeding...");
+    
+    // Seed settings
+    const settingsRef = doc(db, "settings", "company");
+    const settingsSnap = await getDoc(settingsRef);
+    const docData = settingsSnap.exists() ? settingsSnap.data() : null;
+    const needsMigration = !docData || !docData.grantLetterBodyHeader || !docData.grantLetterBodyHeader.includes("{{VESTING_SCHEDULE_TABLE}}");
+    if (needsMigration) {
+      console.log("Seeding/Migrating global company settings to the new Google Doc template...");
+      await setDoc(settingsRef, DEFAULT_SETTINGS);
+    }
+
+    // Sync/Seed admins
+    console.log("Synchronizing latest administrators with Cloud Firestore...");
+    const seedAdmins = [
+      ...JSON.parse(JSON.stringify(MOCK_ADMINS)),
+      {
+        email: "ashutosh@teachmint.com",
+        password: "ashu123", // sync with the latest specified password
+        name: "Ashutosh Unhale",
+        role: "admin"
+      },
+      {
+         email: "hr@teachmint.com",
+         password: "hr123",
+         name: "HR",
+         role: "admin"
+      },
+      {
+        email: "sanju.ts@teachmint.com",
+        password: "admin123",
+        name: "Sanju T",
+        role: "admin"
+      },
+      {
+        email: "preeta@teachmint.com",
+        password: "admin123",
+        name: "Preeta Saxena",
+        role: "admin"
+      }
+    ];
+    // Deduplicate by email
+    const uniqueAdminsMap = new Map<string, any>();
+    for (const admin of seedAdmins) {
+      uniqueAdminsMap.set(admin.email.toLowerCase(), admin);
+    }
+    for (const admin of uniqueAdminsMap.values()) {
+      const adminId = admin.email.toLowerCase().replace(/[^a-z0-9]/g, "_");
+      await setDoc(doc(db, "admins", adminId), admin);
+    }
+
+    // Sync/Seed employees
+    console.log("Synchronizing core employees with Cloud Firestore...");
+    const currentMockIds = new Set(MOCK_EMPLOYEES.map(emp => emp.id));
+    const employeesSnap = await getDocs(collection(db, "employees"));
+    
+    // Clear out-of-date mockup employee profiles from Firestore
+    for (const empDoc of employeesSnap.docs) {
+      const empId = empDoc.id;
+      if (empId.startsWith("EMP") && !currentMockIds.has(empId)) {
+        console.log(`Deleting outdated mockup employee ${empId} from Cloud Firestore...`);
+        await deleteDoc(doc(db, "employees", empId));
+      }
+    }
+
+    // Seed current mock employees to Cloud Firestore only if they don't already exist
+    for (const emp of MOCK_EMPLOYEES) {
+      const empRef = doc(db, "employees", emp.id);
+      const empSnap = await getDoc(empRef);
+      if (!empSnap.exists()) {
+        console.log(`Syncing/Seeding Cloud database for employee ${emp.id} (${emp.name})...`);
+        await setDoc(empRef, emp);
+      } else {
+        console.log(`Employee ${emp.id} (${emp.name}) already exists. Preserving custom fields, vesting details, and documents.`);
+      }
+    }
+    
+    // Seed initial logs if auditLogs is empty
+    const logsSnap = await getDocs(collection(db, "auditLogs"));
+    if (logsSnap.empty) {
+      console.log("Seeding core system event telemetry logs to cloud...");
+      const initialLogs = [
+        {
+          id: "LOG-000001",
+          timestamp: new Date(Date.now() - 3600000 * 5).toISOString(),
+          adminEmail: "ashutosh@teachmint.com",
+          action: "System Initialisation",
+          details: "TeachVest Platform Cap-Table initialized with 10,000,000 Pool Shares and current Fair Market Value (FMV) of INR 210.00."
+        },
+        {
+          id: "LOG-000002",
+          timestamp: new Date(Date.now() - 3600000).toISOString(),
+          adminEmail: "ashutosh@teachmint.com",
+          action: "Employee Seed",
+          details: "Imported core team members: Ashutosh Unhale, Neeraj Kumar, Vinay Bansal & Chinnappa C M."
+        }
+      ];
+      for (const log of initialLogs) {
+        await setDoc(doc(db, "auditLogs", log.id), log);
+      }
+    }
+    console.log("Firestore cloud database connected and seed checks completed!");
+  } catch (error) {
+    console.error("Failed to seed cloud Firestore on server start:", error);
+  }
+}
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-  const DB_FILE = path.join(process.cwd(), "db_storage.json");
+  // Wait for Firestore to be checked and seeded asynchronously
+  await seedDatabaseIfEmpty();
 
-  interface SentEmail {
-    id: string;
-    recipient: string;
-    name: string;
-    subject: string;
-    body: string;
-    sentAt: string;
-    role: "employee" | "admin";
-    password?: string;
-  }
-
-  interface DatabaseSchema {
-    settings: {
-      currentFMV: number;
-      totalPool: number;
-      lastUpdated: string;
-    };
-    employees: Employee[];
-    admins: Admin[];
-    sentEmails: SentEmail[];
-    auditLogs: AuditLog[];
-  }
-
-  // Ensure the db_storage.json file is initialized
-  function getDb(): DatabaseSchema {
-    if (!fs.existsSync(DB_FILE)) {
-      const initialDb: DatabaseSchema = {
-        settings: {
-          currentFMV: 210,
-          totalPool: 10000000,
-          lastUpdated: new Date().toISOString()
-        },
-        employees: JSON.parse(JSON.stringify(MOCK_EMPLOYEES)),
-        admins: [
-          ...JSON.parse(JSON.stringify(MOCK_ADMINS)),
-          {
-            email: "sanju@sanju-t.com",
-            password: "admin123",
-            name: "Sanju",
-            role: "admin"
-          },
-          {
-            email: "sanju.ts@teachmint.com",
-            password: "admin123",
-            name: "Sanju",
-            role: "admin"
-          }
-        ],
-        sentEmails: [],
-        auditLogs: [
-          {
-            id: "LOG-000001",
-            timestamp: new Date(Date.now() - 3600000 * 5).toISOString(),
-            adminEmail: "sanju@sanju-t.com",
-            action: "System Initialisation",
-            details: "TeachVest Platform Cap-Table initialized with 10,000,000 Pool Shares and current Fair Market Value (FMV) of INR 210.00."
-          },
-          {
-            id: "LOG-000002",
-            timestamp: new Date(Date.now() - 3600000).toISOString(),
-            adminEmail: "sanju@sanju-t.com",
-            action: "Employee Seed",
-            details: "Imported core team members: Aanya Sharma, Vikram Malhotra, Rohan Gupta & Sneha Iyer."
-          }
-        ]
-      };
-      saveDb(initialDb);
-      return initialDb;
-    }
+  async function recordLog(req: express.Request, action: string, details: string) {
     try {
-      const raw = fs.readFileSync(DB_FILE, "utf-8");
-      const db = JSON.parse(raw);
-      if (!db.sentEmails) {
-        db.sentEmails = [];
-      }
-      if (!db.auditLogs) {
-        db.auditLogs = [];
-      }
-      return db;
-    } catch (err) {
-      console.error("Error reading database file, re-initializing:", err);
-      const initialDb: DatabaseSchema = {
-        settings: {
-          currentFMV: 210,
-          totalPool: 10000000,
-          lastUpdated: new Date().toISOString()
-        },
-        employees: JSON.parse(JSON.stringify(MOCK_EMPLOYEES)),
-        admins: [
-          ...JSON.parse(JSON.stringify(MOCK_ADMINS)),
-          {
-            email: "sanju@sanju-t.com",
-            password: "admin123",
-            name: "Sanju",
-            role: "admin"
-          },
-          {
-            email: "sanju.ts@teachmint.com",
-            password: "admin123",
-            name: "Sanju",
-            role: "admin"
-          }
-        ],
-        sentEmails: [],
-        auditLogs: []
+      const adminEmail = (req.headers["x-admin-email"] as string) || "ashutosh@teachmint.com";
+      const logId = `LOG-${Math.floor(Math.random() * 900000) + 100000}`;
+      const newLog = {
+        id: logId,
+        timestamp: new Date().toISOString(),
+        adminEmail,
+        action,
+        details
       };
-      saveDb(initialDb);
-      return initialDb;
+      await setDoc(doc(db, "auditLogs", logId), newLog);
+    } catch (error) {
+      console.error("Failed to write audit log to cloud:", error);
     }
-  }
-
-  function saveDb(db: DatabaseSchema) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
-  }
-
-  function recordLog(db_data: DatabaseSchema, req: express.Request, action: string, details: string) {
-    if (!db_data.auditLogs) {
-      db_data.auditLogs = [];
-    }
-    const adminEmail = (req.headers["x-admin-email"] as string) || "sanju@sanju-t.com";
-    db_data.auditLogs.unshift({
-      id: `LOG-${Math.floor(Math.random() * 900000) + 100000}`,
-      timestamp: new Date().toISOString(),
-      adminEmail,
-      action,
-      details
-    });
   }
 
   // API Routes
-  app.get("/api/settings", (req, res) => {
+  app.post("/api/fetch-google-doc", async (req, res) => {
     try {
-      const db_data = getDb();
-      res.json(db_data.settings);
+      const { url } = req.body;
+      if (!url) {
+        return res.status(400).json({ error: "Google Doc URL is required" });
+      }
+
+      const match = url.match(/\/document\/d\/([a-zA-Z0-9-_]+)/);
+      if (!match || !match[1]) {
+        return res.status(400).json({ error: "Could not extract Document ID from URL. Make sure it is a valid Google Docs document sharing link." });
+      }
+
+      const docId = match[1];
+      const exportUrl = `https://docs.google.com/document/d/${docId}/export?format=txt`;
+      
+      const fetchRes = await fetch(exportUrl);
+      if (!fetchRes.ok) {
+        throw new Error(`Google Docs responded with status code ${fetchRes.status}`);
+      }
+
+      const text = await fetchRes.text();
+      res.json({ text });
+    } catch (error: any) {
+      console.error("Error fetching Google Doc:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch Google Doc text." });
+    }
+  });
+
+  app.get("/api/settings", async (req, res) => {
+    try {
+      const docRef = doc(db, "settings", "company");
+      const docSnap = await getDoc(docRef);
+      let settingsData = docSnap.exists() ? docSnap.data() : { ...DEFAULT_SETTINGS };
+      
+      // If chunked, DO NOT load all chunks in standard poll (saves massive bandwidth & prevents lag!),
+      // instead, expose the api download endpoint as the file url!
+      if (settingsData.defaultEsopPolicyFileUrl === "CHUNKER_MANAGED") {
+        settingsData.defaultEsopPolicyFileUrl = "/api/settings/policy-download";
+      }
+      res.json(settingsData);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.post("/api/settings", (req, res) => {
+  // Dedicated endpoint to download the chunked corporate policy file
+  app.get("/api/settings/policy-download", async (req, res) => {
     try {
-      const db_data = getDb();
-      const oldSettings = { ...db_data.settings };
-      db_data.settings = {
-        ...db_data.settings,
+      const docRef = doc(db, "settings", "company");
+      const docSnap = await getDoc(docRef);
+      const settingsData = docSnap.exists() ? docSnap.data() : { ...DEFAULT_SETTINGS };
+
+      let fullUrl = "";
+      if (settingsData.defaultEsopPolicyFileUrl === "CHUNKER_MANAGED" && settingsData.policyChunksCount) {
+        for (let i = 0; i < settingsData.policyChunksCount; i++) {
+          const chunkSnap = await getDoc(doc(db, "policy_chunks", `chunk_${i}`));
+          if (chunkSnap.exists()) {
+            fullUrl += chunkSnap.data().content || "";
+          }
+        }
+      } else {
+        fullUrl = settingsData.defaultEsopPolicyFileUrl || "";
+      }
+
+      if (fullUrl.startsWith("data:")) {
+        const match = fullUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (match) {
+          const mimeType = match[1];
+          const base64Data = match[2];
+          const buffer = Buffer.from(base64Data, 'base64');
+          res.setHeader('Content-Type', mimeType);
+          res.setHeader('Content-Disposition', `attachment; filename="${settingsData.defaultEsopPolicyFileName || 'ESOP_Policy.pdf'}"`);
+          return res.send(buffer);
+        }
+      }
+
+      // Fallback
+      res.redirect(fullUrl || "/");
+    } catch (error: any) {
+      console.error("Error downloading policy:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Dedicated chunked upload endpoint to bypass the Nginx 1MB body limit & Firestore 1MB doc limit
+  app.post("/api/settings/policy-chunk", async (req, res) => {
+    try {
+      const { fileName, chunk, index, total } = req.body;
+      if (fileName === undefined || chunk === undefined || index === undefined || total === undefined) {
+        return res.status(400).json({ error: "Missing required chunk arguments" });
+      }
+
+      // Delete old chunks if writing the first chunk
+      if (index === 0) {
+        const docRef = doc(db, "settings", "company");
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const oldSettings = docSnap.data();
+          const oldChunksCount = oldSettings.policyChunksCount || 0;
+          for (let i = 0; i < oldChunksCount; i++) {
+            try {
+              await deleteDoc(doc(db, "policy_chunks", `chunk_${i}`));
+            } catch (e) {}
+          }
+        }
+      }
+
+      // Save this chunk
+      await setDoc(doc(db, "policy_chunks", `chunk_${index}`), {
+        content: chunk,
+        index: index,
+        total: total
+      });
+
+      // If it's the last chunk, assemble settings doc
+      if (index === total - 1) {
+        const docRef = doc(db, "settings", "company");
+        const docSnap = await getDoc(docRef);
+        const oldSettings = docSnap.exists() ? docSnap.data() : { ...DEFAULT_SETTINGS };
+
+        const newSettings = {
+          ...oldSettings,
+          defaultEsopPolicyFileName: fileName,
+          defaultEsopPolicyFileUrl: "CHUNKER_MANAGED",
+          policyChunksCount: total,
+          lastUpdated: new Date().toISOString()
+        };
+
+        await setDoc(docRef, newSettings);
+        await recordLog(req, "Update Global Policy", `Admin uploaded and published a global ESOP policy file: "${fileName}" (~${Math.round((total * 500) / 100) / 10} MB).`);
+        return res.json({ success: true, finished: true });
+      }
+
+      res.json({ success: true, finished: false });
+    } catch (error: any) {
+      console.error("Error writing policy chunk:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/settings", async (req, res) => {
+    try {
+      const docRef = doc(db, "settings", "company");
+      const docSnap = await getDoc(docRef);
+      const oldSettings = docSnap.exists() ? docSnap.data() as typeof DEFAULT_SETTINGS : { ...DEFAULT_SETTINGS };
+      
+      const newSettings = {
+        ...oldSettings,
         ...req.body,
         lastUpdated: new Date().toISOString()
       };
+
+      // Chunk large policy document storage to circumvent 1MB Firestore document limit
+      const CHUNK_SIZE = 700000; // 700KB chunks
+      if (req.body.defaultEsopPolicyFileUrl !== undefined) {
+        const policyUrl = req.body.defaultEsopPolicyFileUrl;
+        
+        // Always delete old chunks
+        const oldChunksCount = (oldSettings as any).policyChunksCount || 0;
+        for (let i = 0; i < oldChunksCount; i++) {
+          try {
+            await deleteDoc(doc(db, "policy_chunks", `chunk_${i}`));
+          } catch (e) {}
+        }
+
+        if (policyUrl && policyUrl !== "CHUNKER_MANAGED") {
+          const chunks: string[] = [];
+          for (let i = 0; i < policyUrl.length; i += CHUNK_SIZE) {
+            chunks.push(policyUrl.substring(i, i + CHUNK_SIZE));
+          }
+          
+          for (let i = 0; i < chunks.length; i++) {
+            await setDoc(doc(db, "policy_chunks", `chunk_${i}`), {
+              content: chunks[i],
+              index: i,
+              total: chunks.length
+            });
+          }
+          
+          newSettings.defaultEsopPolicyFileUrl = "CHUNKER_MANAGED";
+          (newSettings as any).policyChunksCount = chunks.length;
+        } else if (policyUrl === "") {
+          // Reset to default
+          newSettings.defaultEsopPolicyFileName = DEFAULT_SETTINGS.defaultEsopPolicyFileName;
+          newSettings.defaultEsopPolicyFileUrl = DEFAULT_SETTINGS.defaultEsopPolicyFileUrl;
+          (newSettings as any).policyChunksCount = 0;
+        }
+      }
+      
+      await setDoc(docRef, newSettings);
+
       // Also sync currentFMV into all active employee grants as currentFMV
       if (req.body.currentFMV !== undefined) {
         const newFMV = parseFloat(req.body.currentFMV);
-        db_data.employees.forEach(emp => {
-          if (emp.grants) {
-            emp.grants.forEach(g => {
-              g.currentFMV = newFMV;
+        const empQuerySnap = await getDocs(collection(db, "employees"));
+        for (const empDoc of empQuerySnap.docs) {
+          const empData = empDoc.data() as Employee;
+          if (empData.grants) {
+            let updated = false;
+            const updatedGrants = empData.grants.map((g: any) => {
+              if (g.currentFMV !== newFMV) {
+                updated = true;
+                return { ...g, currentFMV: newFMV };
+              }
+              return g;
             });
+            if (updated) {
+              await updateDoc(doc(db, "employees", empDoc.id), { grants: updatedGrants });
+            }
           }
-        });
+        }
       }
       
       const changes: string[] = [];
@@ -181,29 +400,29 @@ async function startServer() {
       }
       const detailsMsg = changes.length > 0 ? `Updated Company Settings: ${changes.join(", ")}` : "Updated Company Settings";
       
-      recordLog(db_data, req, "Update Settings", detailsMsg);
-      saveDb(db_data);
-      res.json(db_data.settings);
+      await recordLog(req, "Update Settings", detailsMsg);
+      res.json(newSettings);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.get("/api/employees", (req, res) => {
+  app.get("/api/employees", async (req, res) => {
     try {
-      const db_data = getDb();
-      res.json(db_data.employees);
+      const snap = await getDocs(collection(db, "employees"));
+      const employees = snap.docs.map(d => d.data());
+      res.json(employees);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.get("/api/employees/by-email", (req, res) => {
+  app.get("/api/employees/by-email", async (req, res) => {
     try {
       const email = (req.query.email as string || '').toLowerCase();
-      const db_data = getDb();
-      // Find by email or mobile
-      const employee = db_data.employees.find(
+      const snap = await getDocs(collection(db, "employees"));
+      const employees = snap.docs.map(d => d.data() as Employee);
+      const employee = employees.find(
         emp => emp.email.toLowerCase() === email || emp.mobile === email
       );
       if (employee) {
@@ -216,12 +435,12 @@ async function startServer() {
     }
   });
 
-  app.get("/api/employees/:id", (req, res) => {
+  app.get("/api/employees/:id", async (req, res) => {
     try {
-      const db_data = getDb();
-      const employee = db_data.employees.find(emp => emp.id === req.params.id);
-      if (employee) {
-        res.json(employee);
+      const docRef = doc(db, "employees", req.params.id);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        res.json(snap.data());
       } else {
         res.status(404).json({ error: "Employee not found" });
       }
@@ -230,16 +449,18 @@ async function startServer() {
     }
   });
 
-  app.post("/api/employees", (req, res) => {
+  app.post("/api/employees", async (req, res) => {
     try {
-      const db_data = getDb();
       const newEmp = req.body as Employee;
-      const index = db_data.employees.findIndex(emp => emp.id === newEmp.id);
-      if (index !== -1) {
-        db_data.employees[index] = { ...db_data.employees[index], ...newEmp };
-        recordLog(db_data, req, "Update Employee", `Updated core profile info for employee ${newEmp.name} (${newEmp.email})`);
+      const docRef = doc(db, "employees", newEmp.id);
+      const snap = await getDoc(docRef);
+      
+      if (snap.exists()) {
+        const merged = { ...snap.data(), ...newEmp };
+        await setDoc(docRef, merged);
+        await recordLog(req, "Update Employee", `Updated core profile info for employee ${newEmp.name} (${newEmp.email})`);
       } else {
-        db_data.employees.push(newEmp);
+        await setDoc(docRef, newEmp);
         // Create an invitation email!
         const emailId = `MSG-${Math.floor(Math.random() * 900000) + 100000}`;
         const inviteEmail: SentEmail = {
@@ -276,23 +497,23 @@ async function startServer() {
           role: "employee",
           password: newEmp.password || "login123"
         };
-        db_data.sentEmails.push(inviteEmail);
-        recordLog(db_data, req, "Create Employee", `Created employee profile for ${newEmp.name} (${newEmp.email}) representing ${newEmp.grants?.[0]?.totalShares?.toLocaleString() || 0} initial options.`);
+        await setDoc(doc(db, "sentEmails", emailId), inviteEmail);
+        await recordLog(req, "Create Employee", `Created employee profile for ${newEmp.name} (${newEmp.email}) representing ${newEmp.grants?.[0]?.totalShares?.toLocaleString() || 0} initial options.`);
       }
-      saveDb(db_data);
       res.json(newEmp);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.put("/api/employees/:id", (req, res) => {
+  app.put("/api/employees/:id", async (req, res) => {
     try {
-      const db_data = getDb();
-      const index = db_data.employees.findIndex(emp => emp.id === req.params.id);
-      if (index !== -1) {
-        const original = db_data.employees[index];
-        db_data.employees[index] = { ...db_data.employees[index], ...req.body };
+      const docRef = doc(db, "employees", req.params.id);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const original = snap.data() as Employee;
+        const updated = { ...original, ...req.body };
+        await setDoc(docRef, updated);
         
         // Formulate a descriptive details string based on changes
         const changes: string[] = [];
@@ -312,9 +533,8 @@ async function startServer() {
         }
         const detailsMsg = changes.length > 0 ? `Modified profile for ${original.name}: ${changes.join(", ")}` : `Updated fields for ${original.name}`;
         
-        recordLog(db_data, req, "Edit Employee", detailsMsg);
-        saveDb(db_data);
-        res.json(db_data.employees[index]);
+        await recordLog(req, "Edit Employee", detailsMsg);
+        res.json(updated);
       } else {
         res.status(404).json({ error: "Employee not found" });
       }
@@ -323,35 +543,39 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/employees/:id", (req, res) => {
+  app.delete("/api/employees/:id", async (req, res) => {
     try {
-      const db_data = getDb();
-      const target = db_data.employees.find(emp => emp.id === req.params.id);
-      db_data.employees = db_data.employees.filter(emp => emp.id !== req.params.id);
-      if (target) {
-        recordLog(db_data, req, "Delete Employee", `Removed employee profile and cap-table entry for ${target.name} (${target.email})`);
+      const docRef = doc(db, "employees", req.params.id);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const target = snap.data() as Employee;
+        await deleteDoc(docRef);
+        await recordLog(req, "Delete Employee", `Removed employee profile and cap-table entry for ${target.name} (${target.email})`);
+        res.json({ success: true });
+      } else {
+        res.status(404).json({ error: "Employee not found" });
       }
-      saveDb(db_data);
-      res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.get("/api/admins", (req, res) => {
+  app.get("/api/admins", async (req, res) => {
     try {
-      const db_data = getDb();
-      res.json(db_data.admins);
+      const snap = await getDocs(collection(db, "admins"));
+      const admins = snap.docs.map(d => d.data());
+      res.json(admins);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.get("/api/admins/by-email", (req, res) => {
+  app.get("/api/admins/by-email", async (req, res) => {
     try {
       const email = (req.query.email as string || '').toLowerCase();
-      const db_data = getDb();
-      const admin = db_data.admins.find(adm => adm.email.toLowerCase() === email);
+      const snap = await getDocs(collection(db, "admins"));
+      const admins = snap.docs.map(d => d.data() as Admin);
+      const admin = admins.find(adm => adm.email.toLowerCase() === email);
       if (admin) {
         res.json(admin);
       } else {
@@ -362,25 +586,43 @@ async function startServer() {
     }
   });
 
-  app.get("/api/emails", (req, res) => {
+  app.get("/api/emails", async (req, res) => {
     try {
-      const db_data = getDb();
-      res.json(db_data.sentEmails || []);
+      const snap = await getDocs(collection(db, "sentEmails"));
+      const emails = snap.docs.map(d => d.data());
+      res.json(emails);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.post("/api/admins", (req, res) => {
+  app.post("/api/emails", async (req, res) => {
     try {
-      const db_data = getDb();
+      const newEmail = req.body as SentEmail;
+      if (!newEmail.id) {
+        newEmail.id = `MSG-${Math.floor(Math.random() * 900000) + 100000}`;
+      }
+      if (!newEmail.sentAt) {
+        newEmail.sentAt = new Date().toISOString();
+      }
+      await setDoc(doc(db, "sentEmails", newEmail.id), newEmail);
+      res.json({ success: true, email: newEmail });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admins", async (req, res) => {
+    try {
       const newAdmin = req.body as Admin;
-      const index = db_data.admins.findIndex(adm => adm.email.toLowerCase() === newAdmin.email.toLowerCase());
-      if (index !== -1) {
-        db_data.admins[index] = { ...db_data.admins[index], ...newAdmin };
-        recordLog(db_data, req, "Update Administrator", `Updated permission layout or info for administrator ${newAdmin.name} (${newAdmin.email})`);
+      const adminId = newAdmin.email.toLowerCase().replace(/[^a-z0-9]/g, "_");
+      const docRef = doc(db, "admins", adminId);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        await setDoc(docRef, { ...snap.data(), ...newAdmin });
+        await recordLog(req, "Update Administrator", `Updated permission layout or info for administrator ${newAdmin.name} (${newAdmin.email})`);
       } else {
-        db_data.admins.push(newAdmin);
+        await setDoc(docRef, newAdmin);
         // Create an invitation email!
         const emailId = `MSG-${Math.floor(Math.random() * 900000) + 100000}`;
         const inviteEmail: SentEmail = {
@@ -416,48 +658,55 @@ async function startServer() {
           role: "admin",
           password: newAdmin.password || "admin123"
         };
-        db_data.sentEmails.push(inviteEmail);
-        recordLog(db_data, req, "Create Administrator", `Provisioned system administrator privileges for ${newAdmin.name} (${newAdmin.email})`);
+        await setDoc(doc(db, "sentEmails", emailId), inviteEmail);
+        await recordLog(req, "Create Administrator", `Provisioned system administrator privileges for ${newAdmin.name} (${newAdmin.email})`);
       }
-      saveDb(db_data);
       res.json(newAdmin);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.delete("/api/admins/:email", (req, res) => {
+  app.delete("/api/admins/:email", async (req, res) => {
     try {
-      const db_data = getDb();
       const email = req.params.email.toLowerCase();
-      const target = db_data.admins.find(adm => adm.email.toLowerCase() === email);
-      db_data.admins = db_data.admins.filter(adm => adm.email.toLowerCase() !== email);
-      if (target) {
-        recordLog(db_data, req, "Delete Administrator", `Revoked system administrator credentials for ${target.name} (${target.email})`);
+      const adminId = email.replace(/[^a-z0-9]/g, "_");
+      const docRef = doc(db, "admins", adminId);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const target = snap.data() as Admin;
+        await deleteDoc(docRef);
+        await recordLog(req, "Delete Administrator", `Revoked system administrator credentials for ${target.name} (${target.email})`);
+        res.json({ success: true });
+      } else {
+        res.status(404).json({ error: "Admin not found" });
       }
-      saveDb(db_data);
-      res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.get("/api/audit-logs", (req, res) => {
+  app.get("/api/audit-logs", async (req, res) => {
     try {
-      const db_data = getDb();
-      res.json(db_data.auditLogs || []);
+      const snap = await getDocs(collection(db, "auditLogs"));
+      const logs = snap.docs.map(d => d.data());
+      logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      res.json(logs);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.post("/api/audit-logs", (req, res) => {
+  app.post("/api/audit-logs", async (req, res) => {
     try {
-      const db_data = getDb();
       const { action, details } = req.body;
-      recordLog(db_data, req, action, details || "");
-      saveDb(db_data);
-      res.json({ success: true, logs: db_data.auditLogs });
+      await recordLog(req, action, details || "");
+      
+      const snap = await getDocs(collection(db, "auditLogs"));
+      const logs = snap.docs.map(d => d.data());
+      logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      
+      res.json({ success: true, logs });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

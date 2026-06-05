@@ -14,6 +14,28 @@ export interface Grant {
   vestingSchedule: string;
   status: "Active" | "Fully Vested" | "Expired";
   cliffMonths?: number;
+
+  // Pausing & Timeline Shift
+  isPaused?: boolean;
+  pauseStartDate?: string;
+  pauseEndDate?: string;
+  resumeOption?: "old_dates" | "new_dates";
+  resumeStartDate?: string;
+
+  // Option Rounding Override
+  roundingMode?: "2-decimal" | "4-decimal" | "nearest_integer" | "none";
+
+  // Custom Vesting Milestones from Bulk Upload (e.g. 13-vestings schedule)
+  customVestingEvents?: { date: string; shares: number }[];
+
+  // Signature Workflow
+  workflowStatus?: "Draft" | "Pending Admin Review" | "Pending Signatory Signature" | "Pending Employee Signature" | "Fully Signed";
+  reviewerAdminEmail?: string;
+  isSignedBySignatory?: boolean;
+  isSignedByEmployee?: boolean;
+  signedLetterUrl?: string;
+  signatoryEsignDate?: string;
+  employeeEsignDate?: string;
 }
 
 export interface Transaction {
