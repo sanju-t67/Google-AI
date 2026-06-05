@@ -6,10 +6,11 @@ import { getFirestore, doc, getDoc, getDocs, setDoc, deleteDoc, updateDoc, colle
 import firebaseConfig from "./firebase-applet-config.json";
 import { MOCK_ADMINS, MOCK_EMPLOYEES } from "./src/constants";
 import { Employee, Admin, AuditLog } from "./src/types";
+import { generateVestingSchedule } from "./src/lib/utils";
 
 // Initialize Firebase SDK
 const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+const db = getFirestore(firebaseApp, (firebaseConfig as any).firestoreDatabaseId);
 
 interface SentEmail {
   id: string;
@@ -20,6 +21,8 @@ interface SentEmail {
   sentAt: string;
   role: "employee" | "admin";
   password?: string;
+  milestoneId?: string;
+  sender?: string;
 }
 
 const DEFAULT_SETTINGS = {
@@ -38,8 +41,107 @@ const DEFAULT_SETTINGS = {
   defaultEsopPolicyFileName: "Teachmint_Global_ESOP_Policy_2025.pdf",
   defaultEsopPolicyFileUrl: "data:text/plain;base64,VEVBQ0hNSU5UIEdMT0JBTCBFU09QIFBPTElDWSAyMDI1CgpUaGlzIGlzIHRoZSBvZmZpY2lhbCBUZWFjaG1pbnQgR2xvYmFsIEVTT1AgUG9saWN5IGZvciAyMDI1LiBBbGwgZW1wbG95ZWVzIGFyZSBzdWJqZWN0IHRvIHRoZSBndWlkZWxpbmVzLCBjbGlmZiByZXMtc3RyYXRlZ2llcywgYW5kIGV4ZXJjaXNlIHBlcmlvZHMgZGVmaW5lZCBoZXJlaW4u",
   googleDocUrl: "https://docs.google.com/document/d/1Q396bGnmJ84f-duN7KHdoGlL4aTUkAemM1GDT71ucgA/edit?usp=sharing",
-  lastUpdated: new Date().toISOString()
+  senderEmailId: "hr@teachmint.com",
+  backupDriveFolderId: "",
+  backupDriveFolderName: "",
+  lastBackupDate: "",
+  lastUpdated: new Date().toISOString(),
+  emailTemplateWelcomeSubject: "TeachVest Invitation: Access Your Employee ESOP Dashboard",
+  emailTemplateWelcomeBody: `<div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #eef2ff; border-radius: 12px; max-width: 600px; border: 1px solid #e0e7ff;">
+  <h2 style="color: #0052ff; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">Welcome to TeachVest, {{STAKEHOLDER_NAME}}!</h2>
+  <p style="font-size: 14px; line-height: 1.5; color: #475569;">An official employee profile has been created for you on the TeachVest platform by your company administrator.</p>
+  
+  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+    <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Your Login Credentials</p>
+    <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Login Username:</strong> {{EMPLOYEE_EMAIL}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Temporary Password:</strong> {{PASSWORD}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Employee Designation:</strong> {{DESIGNATION}} ({{DEPARTMENT}})</p>
+  </div>
+
+  <p style="font-size: 14px; line-height: 1.5; color: #475569;">To securely inspect, monitor and exercise your vesting ESOP shares, please log in to your employee dashboard using the button below:</p>
+  
+  <div style="text-align: center; margin: 25px 0;">
+    <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Enter TeachVest Portal</a>
+  </div>
+
+  <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; line-height: 1.4;">
+    Security Policy: This is an automated security mail dispatch. If you did not expect these credentials or have security questions, please contact your TeachVest Cap-Table HR administrator immediately.
+  </p>
+</div>`,
+  emailTemplateReminderSubject: "Urgent Action Required: Teachmint ESOP Grant E-Signature Request",
+  emailTemplateReminderBody: `<div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #fffbeb; border-radius: 12px; max-width: 600px; border: 1px solid #fef3c7;">
+  <h2 style="color: #b45309; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">Digital Signature Outstanding</h2>
+  <p style="font-size: 14px; line-height: 1.5; color: #475569;">Hello {{STAKEHOLDER_NAME}}, your ESOP Options Allocation Offer <strong>{{GRANT_ID}}</strong> representing <strong>{{SHARES_QUANTITY}} Options</strong> is awaiting your e-signature execution.</p>
+  
+  <div style="background: white; border: 1px solid #fef3c7; border-radius: 12px; padding: 18px; margin: 20px 0;">
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Grant Reference:</strong> {{GRANT_ID}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Strike Option Price:</strong> INR {{STRIKE_PRICE}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Sign-off Status:</strong> Pending Stakeholder Signature</p>
+  </div>
+
+  <p style="font-size: 14px; line-height: 1.5; color: #475569;">Please log in securely to complete signing and execute your digital ESOP Grant Certificate contract:</p>
+  
+  <div style="text-align: center; margin: 25px 0;">
+    <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Review & E-Sign Offer Letter</a>
+  </div>
+</div>`,
+  emailTemplateVestingSubject: "Teachmint options vested today! ({{VESTED_DATE}})",
+  emailTemplateVestingBody: `<div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #eef2ff; border-radius: 12px; max-width: 600px; border: 1px solid #e0e7ff;">
+  <h3 style="color: #6366f1; margin-bottom: 12px; font-weight: 800; font-family: sans-serif;">Automated Option Vesting Notification</h3>
+  <p style="font-size: 14px; line-height: 1.6; color: #475569; font-family: sans-serif;">
+    Hi <strong>{{STAKEHOLDER_NAME}}</strong>,
+  </p>
+  <p style="font-size: 14px; line-height: 1.6; color: #475569; font-family: sans-serif;">
+    We are happy to inform you that <strong>{{VESTED_SHARES}}</strong> options got vested on <strong>{{VESTED_DATE}}</strong> for your grant under <strong>Teachmint Technologies Private Limited Employees’ Stock Option Plan 2020</strong>.
+  </p>
+  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+    <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Vesting Milestone Stats</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Milestone Date:</strong> {{VESTED_DATE}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Newly Vested Options:</strong> {{VESTED_SHARES}} units</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Cumulative Vested Options:</strong> {{CUMULATIVE_VESTED_SHARES}} units</p>
+  </div>
+  <div style="text-align: center; margin: 25px 0;">
+    <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0052ff; color: white; padding: 12px 24px; border-radius: 10px; font-weight: bold; text-decoration: none; font-size: 13px; font-family: sans-serif;">Login to TeachVest Dashboard</a>
+  </div>
+  <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; font-family: sans-serif;">
+    Regards,<br/>
+    <strong>Teachmint HR Operations</strong>
+  </p>
+</div>`,
+  emailTemplateAdminSubject: "TeachVest Invitation: Administrator Access Granted",
+  emailTemplateAdminBody: `<div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #f8fafc; border-radius: 12px; max-width: 600px; border: 1px solid #e2e8f0;">
+  <h2 style="color: #0052ff; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">TeachVest Administrator Access Activated</h2>
+  <p style="font-size: 14px; line-height: 1.5; color: #475569;">You have been granted official Administrator privileges on the TeachVest Capital Cap-Table and ESOP Management System.</p>
+  
+  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+    <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Your Administrator Credentials</p>
+    <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Login Username:</strong> {{ADMIN_EMAIL}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Temporary Password:</strong> {{PASSWORD}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Assigned Access Role:</strong> Platform Administrator / Board Observer</p>
+  </div>
+
+  <p style="font-size: 14px; line-height: 1.5; color: #475569;">Use corporate administrator portal access to define stock metrics, edit employee grants, attach critical legal documents and supervise active vestings.</p>
+  
+  <div style="text-align: center; margin: 25px 0;">
+    <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Enter Admin Dashboard</a>
+  </div>
+
+  <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; line-height: 1.4;">
+    Security Alert: Keep these credentials stored securely. Do not share your login details with any unverified accounts. All access sessions are logged for audit compliance.
+  </p>
+</div>`
 };
+
+function replaceTokens(template: string, vars: Record<string, string>): string {
+  let result = template;
+  for (const [key, value] of Object.entries(vars)) {
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    result = result.replace(new RegExp(escapedKey, 'g'), value || '');
+  }
+  return result;
+}
 
 async function seedDatabaseIfEmpty() {
   try {
@@ -160,6 +262,164 @@ async function startServer() {
   // Wait for Firestore to be checked and seeded asynchronously
   await seedDatabaseIfEmpty();
 
+  async function checkAndTriggerVestingEmails() {
+    try {
+      console.log("[AUTOMATION] Running Automated Vesting Email Sweeper check...");
+      
+      const settingsRef = doc(db, "settings", "company");
+      const settingsSnap = await getDoc(settingsRef);
+      const settingsData = settingsSnap.exists() ? settingsSnap.data() : { ...DEFAULT_SETTINGS };
+
+      const fromAddress = settingsData.senderEmailId || "hr@teachmint.com";
+
+      const employeesSnap = await getDocs(collection(db, "employees"));
+      const employees = employeesSnap.docs.map(dec => dec.data() as Employee);
+
+      // Check already sent emails to deduplicate
+      const sentEmailsSnap = await getDocs(collection(db, "sentEmails"));
+      const dispatchedMilestones = new Set<string>();
+      sentEmailsSnap.forEach(eDoc => {
+        const item = eDoc.data() as SentEmail;
+        if (item.milestoneId) {
+          dispatchedMilestones.add(item.milestoneId);
+        }
+      });
+
+      const now = new Date();
+      // IST conversion (GMT + 5.30)
+      const istDate = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+      const todayStr = istDate.toISOString().split("T")[0];
+
+      let sentCount = 0;
+
+      for (const emp of employees) {
+        if (!emp.grants || emp.grants.length === 0) continue;
+
+        for (const grant of emp.grants) {
+          const schedule = generateVestingSchedule(
+            emp.joinDate || grant.grantDate,
+            grant.totalShares,
+            emp.cliffType,
+            todayStr,
+            grant as any,
+            settingsData.roundingMode || "2-decimal"
+          );
+
+          // Find milestones with status "Vested" (vested today or in the past)
+          const vestedMilestones = schedule.filter(m => m.status === "Vested");
+
+          for (const event of vestedMilestones) {
+            const milestoneId = `${emp.id}_${grant.id}_${event.date}`;
+
+            if (!dispatchedMilestones.has(milestoneId)) {
+              // Trigger automated email dispatch
+              const emailId = `MSG-${Math.floor(Math.random() * 900000) + 100000}`;
+              
+              const variables = {
+                "{{STAKEHOLDER_NAME}}": emp.name,
+                "{{VESTED_DATE}}": event.date,
+                "{{VESTED_SHARES}}": event.toVest.toLocaleString("en-IN"),
+                "{{CUMULATIVE_VESTED_SHARES}}": event.totalVested.toLocaleString("en-IN"),
+                "{{PORTAL_URL}}": `/?role=employee&email=${encodeURIComponent(emp.email)}`
+              };
+              const rawSub = settingsData.emailTemplateVestingSubject || `Teachmint options vested today! ({{VESTED_DATE}})`;
+              const rawBody = settingsData.emailTemplateVestingBody || `
+                <div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #eef2ff; border-radius: 12px; max-width: 600px; border: 1px solid #e0e7ff;">
+                  <h3 style="color: #6366f1; margin-bottom: 12px; font-weight: 800; font-family: sans-serif;">Automated Option Vesting Notification</h3>
+                  <p style="font-size: 14px; line-height: 1.6; color: #475569; font-family: sans-serif;">
+                    Hi <strong>{{STAKEHOLDER_NAME}}</strong>,
+                  </p>
+                  <p style="font-size: 14px; line-height: 1.6; color: #475569; font-family: sans-serif;">
+                    We are happy to inform you that <strong>{{VESTED_SHARES}}</strong> options got vested on <strong>{{VESTED_DATE}}</strong> for your grant under <strong>Teachmint Technologies Private Limited Employees’ Stock Option Plan 2020</strong>.
+                  </p>
+                  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+                    <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Vesting Milestone Stats</p>
+                    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Milestone Date:</strong> {{VESTED_DATE}}</p>
+                    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Newly Vested Options:</strong> {{VESTED_SHARES}} units</p>
+                    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Cumulative Vested Options:</strong> {{CUMULATIVE_VESTED_SHARES}} units</p>
+                  </div>
+                  <div style="text-align: center; margin: 25px 0;">
+                    <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0052ff; color: white; padding: 12px 24px; border-radius: 10px; font-weight: bold; text-decoration: none; font-size: 13px; font-family: sans-serif;">Login to TeachVest Dashboard</a>
+                  </div>
+                  <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; font-family: sans-serif;">
+                    Regards,<br/>
+                    <strong>Teachmint HR Operations</strong>
+                  </p>
+                </div>
+              `;
+              const emailSubject = replaceTokens(rawSub, variables);
+              const emailBody = replaceTokens(rawBody, variables).trim().replace(/\n\s+/g, '\n');
+
+              const inviteEmail: SentEmail = {
+                id: emailId,
+                recipient: emp.email,
+                name: emp.name,
+                subject: emailSubject,
+                body: emailBody,
+                sentAt: new Date().toISOString(),
+                role: "employee",
+                password: emp.password || "login123",
+                milestoneId: milestoneId,
+                sender: fromAddress
+              };
+
+              await setDoc(doc(db, "sentEmails", emailId), inviteEmail);
+
+              // Log system event telemetry
+              const logId = `LOG-${Math.floor(Math.random() * 900000) + 100000}`;
+              const autoLog = {
+                id: logId,
+                timestamp: new Date().toISOString(),
+                adminEmail: "automation@teachmint.com",
+                action: "Vesting Auto Notification",
+                details: `Automated ESOP vesting alert triggered for stakeholder ${emp.name} (${emp.email}). Dispatched alert representing ${event.toVest.toLocaleString("en-IN")} newly vested options on milestone date ${event.date}.`
+              };
+              await setDoc(doc(db, "auditLogs", logId), autoLog);
+
+              dispatchedMilestones.add(milestoneId);
+              sentCount++;
+            }
+          }
+        }
+      }
+
+      if (sentCount > 0) {
+        console.log(`[AUTOMATION] Vesting email sweeper complete. Dispatched ${sentCount} new notifications.`);
+      } else {
+        console.log("[AUTOMATION] Vesting email sweeper complete. No new pending notifications found.");
+      }
+    } catch (error) {
+      console.error("[AUTOMATION] Vesting email sweeper failed:", error);
+    }
+  }
+
+  // Setup Automated Background Clock running check every 60 seconds
+  let lastCheckedHour = -1;
+  let lastCheckedDate = "";
+
+  setInterval(async () => {
+    try {
+      const now = new Date();
+      // IST conversion (GMT + 5.30)
+      const istDate = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+      const currentHourIST = istDate.getUTCHours(); // IST hours
+      const currentDateISTStr = istDate.toISOString().split("T")[0];
+
+      // Automatically trigger on the 9:00 AM block
+      if (currentHourIST === 9 && (lastCheckedHour !== 9 || lastCheckedDate !== currentDateISTStr)) {
+        console.log(`[AUTOMATION] Background scheduler matched 9:00 AM IST on date ${currentDateISTStr}. Launching sweeper...`);
+        lastCheckedHour = 9;
+        lastCheckedDate = currentDateISTStr;
+        await checkAndTriggerVestingEmails();
+      } else if (currentHourIST !== 9) {
+        // Track normal hour changes
+        lastCheckedHour = currentHourIST;
+      }
+    } catch (err) {
+      console.error("[AUTOMATION] Scheduler ticks failed:", err);
+    }
+  }, 60000); // Ticks every 60 seconds
+
   async function recordLog(req: express.Request, action: string, details: string) {
     try {
       const adminEmail = (req.headers["x-admin-email"] as string) || "ashutosh@teachmint.com";
@@ -203,6 +463,16 @@ async function startServer() {
     } catch (error: any) {
       console.error("Error fetching Google Doc:", error);
       res.status(500).json({ error: error.message || "Failed to fetch Google Doc text." });
+    }
+  });
+
+  app.post("/api/trigger-vesting-emails", async (req, res) => {
+    try {
+      await checkAndTriggerVestingEmails();
+      res.json({ success: true, message: "Manual check check sweep executed successfully!" });
+    } catch (error: any) {
+      console.error("Error running manual sweep:", error);
+      res.status(500).json({ error: error.message });
     }
   });
 
@@ -462,40 +732,56 @@ async function startServer() {
       } else {
         await setDoc(docRef, newEmp);
         // Create an invitation email!
+        const settingsSnap = await getDoc(doc(db, "settings", "company"));
+        const settingsData = settingsSnap.exists() ? settingsSnap.data() : { ...DEFAULT_SETTINGS };
+        const fromAddress = settingsData.senderEmailId || "hr@teachmint.com";
+
         const emailId = `MSG-${Math.floor(Math.random() * 900000) + 100000}`;
+        const variables = {
+          "{{STAKEHOLDER_NAME}}": newEmp.name,
+          "{{EMPLOYEE_EMAIL}}": newEmp.email,
+          "{{PASSWORD}}": newEmp.password || "login123",
+          "{{DESIGNATION}}": newEmp.designation || "",
+          "{{DEPARTMENT}}": newEmp.department || "",
+          "{{PORTAL_URL}}": `/?role=employee&email=${encodeURIComponent(newEmp.email)}`
+        };
+
+        const rawSub = settingsData.emailTemplateWelcomeSubject || "TeachVest Invitation: Access Your Employee ESOP Dashboard";
+        const rawBody = settingsData.emailTemplateWelcomeBody || `
+          <div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #eef2ff; border-radius: 12px; max-width: 600px; border: 1px solid #e0e7ff;">
+            <h2 style="color: #0052ff; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">Welcome to TeachVest, {{STAKEHOLDER_NAME}}!</h2>
+            <p style="font-size: 14px; line-height: 1.5; color: #475569;">An official employee profile has been created for you on the TeachVest platform by your company administrator.</p>
+            
+            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Your Login Credentials</p>
+              <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
+              <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Login Username:</strong> {{EMPLOYEE_EMAIL}}</p>
+              <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Temporary Password:</strong> {{PASSWORD}}</p>
+              <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Employee Designation:</strong> {{DESIGNATION}} ({{DEPARTMENT}})</p>
+            </div>
+
+            <p style="font-size: 14px; line-height: 1.5; color: #475569;">To securely inspect, monitor and exercise your vesting ESOP shares, please log in to your employee dashboard using the button below:</p>
+            
+            <div style="text-align: center; margin: 25px 0;">
+              <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Enter TeachVest Portal</a>
+            </div>
+
+            <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; line-height: 1.4;">
+              Security Policy: This is an automated security mail dispatch. If you did not expect these credentials or have security questions, please contact your TeachVest Cap-Table HR administrator immediately.
+            </p>
+          </div>
+        `;
+
         const inviteEmail: SentEmail = {
           id: emailId,
           recipient: newEmp.email,
           name: newEmp.name,
-          subject: "TeachVest Invitation: Access Your Employee ESOP Dashboard",
-          body: `
-            <div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #f8fafc; border-radius: 12px; max-width: 600px; border: 1px solid #e2e8f0;">
-              <h2 style="color: #0052ff; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">Welcome to TeachVest, ${newEmp.name}!</h2>
-              <p style="font-size: 14px; line-height: 1.5; color: #475569;">An official employee profile has been created for you on the TeachVest platform by your company administrator.</p>
-              
-              <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
-                <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Your Login Credentials</p>
-                <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
-                <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Login Username:</strong> ${newEmp.email}</p>
-                <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Temporary Password:</strong> ${newEmp.password || 'login123'}</p>
-                <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Employee Designation:</strong> ${newEmp.designation} (${newEmp.department})</p>
-                ${newEmp.grantLetterNumber ? `<p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Grant Letter Ref:</strong> ${newEmp.grantLetterNumber}</p>` : ''}
-              </div>
-
-              <p style="font-size: 14px; line-height: 1.5; color: #475569;">To securely inspect, monitor and exercise your vesting ESOP shares, please log in to your employee dashboard using the button below:</p>
-              
-              <div style="text-align: center; margin: 25px 0;">
-                <a href="/?role=employee&email=${encodeURIComponent(newEmp.email)}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Enter TeachVest Portal</a>
-              </div>
-
-              <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; line-height: 1.4;">
-                Security Policy: This is an automated security mail dispatch. If you did not expect these credentials or have security questions, please contact your TeachVest Cap-Table HR administrator immediately.
-              </p>
-            </div>
-          `.trim().replace(/\n\s+/g, '\n'),
+          subject: replaceTokens(rawSub, variables),
+          body: replaceTokens(rawBody, variables).trim().replace(/\n\s+/g, '\n'),
           sentAt: new Date().toISOString(),
           role: "employee",
-          password: newEmp.password || "login123"
+          password: newEmp.password || "login123",
+          sender: fromAddress
         };
         await setDoc(doc(db, "sentEmails", emailId), inviteEmail);
         await recordLog(req, "Create Employee", `Created employee profile for ${newEmp.name} (${newEmp.email}) representing ${newEmp.grants?.[0]?.totalShares?.toLocaleString() || 0} initial options.`);
@@ -624,39 +910,54 @@ async function startServer() {
       } else {
         await setDoc(docRef, newAdmin);
         // Create an invitation email!
+        const settingsSnap = await getDoc(doc(db, "settings", "company"));
+        const settingsData = settingsSnap.exists() ? settingsSnap.data() : { ...DEFAULT_SETTINGS };
+        const fromAddress = settingsData.senderEmailId || "hr@teachmint.com";
+
         const emailId = `MSG-${Math.floor(Math.random() * 900000) + 100000}`;
+        const variables = {
+          "{{ADMIN_NAME}}": newAdmin.name,
+          "{{ADMIN_EMAIL}}": newAdmin.email,
+          "{{PASSWORD}}": newAdmin.password || "admin123",
+          "{{PORTAL_URL}}": `/?role=admin&email=${encodeURIComponent(newAdmin.email)}`
+        };
+
+        const rawSub = settingsData.emailTemplateAdminSubject || "TeachVest Invitation: Administrator Access Granted";
+        const rawBody = settingsData.emailTemplateAdminBody || `
+          <div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #f8fafc; border-radius: 12px; max-width: 600px; border: 1px solid #e2e8f0;">
+            <h2 style="color: #0052ff; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">TeachVest Administrator Access Activated</h2>
+            <p style="font-size: 14px; line-height: 1.5; color: #475569;">You have been granted official Administrator privileges on the TeachVest Capital Cap-Table and ESOP Management System.</p>
+            
+            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+              <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Your Administrator Credentials</p>
+              <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
+              <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Login Username:</strong> {{ADMIN_EMAIL}}</p>
+              <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Temporary Password:</strong> {{PASSWORD}}</p>
+              <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Assigned Access Role:</strong> Platform Administrator / Board Observer</p>
+            </div>
+
+            <p style="font-size: 14px; line-height: 1.5; color: #475569;">Use corporate administrator portal access to define stock metrics, edit employee grants, attach critical legal documents and supervise active vestings.</p>
+            
+            <div style="text-align: center; margin: 25px 0;">
+              <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Enter Admin Dashboard</a>
+            </div>
+
+            <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; line-height: 1.4;">
+              Security Alert: Keep these credentials stored securely. Do not share your login details with any unverified accounts. All access sessions are logged for audit compliance.
+            </p>
+          </div>
+        `;
+
         const inviteEmail: SentEmail = {
           id: emailId,
           recipient: newAdmin.email,
           name: newAdmin.name,
-          subject: "TeachVest Invitation: Administrator Access Granted",
-          body: `
-            <div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #f8fafc; border-radius: 12px; max-width: 600px; border: 1px solid #e2e8f0;">
-              <h2 style="color: #0052ff; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">TeachVest Administrator Access Activated</h2>
-              <p style="font-size: 14px; line-height: 1.5; color: #475569;">You have been granted official Administrator privileges on the TeachVest Capital Cap-Table and ESOP Management System.</p>
-              
-              <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
-                <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Your Administrator Credentials</p>
-                <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
-                <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Login Username:</strong> ${newAdmin.email}</p>
-                <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Temporary Password:</strong> ${newAdmin.password || 'admin123'}</p>
-                <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Assigned Access Role:</strong> Platform Administrator / Board Observer</p>
-              </div>
-
-              <p style="font-size: 14px; line-height: 1.5; color: #475569;">Use corporate administrator portal access to define stock metrics, edit employee grants, attach critical legal documents and supervise active vestings.</p>
-              
-              <div style="text-align: center; margin: 25px 0;">
-                <a href="/?role=admin&email=${encodeURIComponent(newAdmin.email)}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Enter Admin Dashboard</a>
-              </div>
-
-              <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; line-height: 1.4;">
-                Security Alert: Keep these credentials stored securely. Do not share your login details with any unverified accounts. All access sessions are logged for audit compliance.
-              </p>
-            </div>
-          `.trim().replace(/\n\s+/g, '\n'),
+          subject: replaceTokens(rawSub, variables),
+          body: replaceTokens(rawBody, variables).trim().replace(/\n\s+/g, '\n'),
           sentAt: new Date().toISOString(),
           role: "admin",
-          password: newAdmin.password || "admin123"
+          password: newAdmin.password || "admin123",
+          sender: fromAddress
         };
         await setDoc(doc(db, "sentEmails", emailId), inviteEmail);
         await recordLog(req, "Create Administrator", `Provisioned system administrator privileges for ${newAdmin.name} (${newAdmin.email})`);

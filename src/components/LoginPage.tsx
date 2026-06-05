@@ -137,12 +137,17 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                </motion.div>
             </div>
             <div className="flex justify-center mb-2">
-              <img 
-                src={otherLogoUrl} 
-                alt="TeachVest" 
-                className="h-12 object-contain"
-                referrerPolicy="no-referrer"
-              />
+              <motion.div
+                whileHover={{ scale: 1.03, rotate: -1 }}
+                className="h-14 px-6 rounded-2xl bg-white flex items-center justify-center shadow-[0_8px_20px_rgba(0,82,255,0.08)] border border-slate-100 dark:border-slate-200/10 overflow-hidden"
+              >
+                <img 
+                  src={otherLogoUrl} 
+                  alt="TeachVest" 
+                  className="h-8 object-contain"
+                  referrerPolicy="no-referrer"
+                />
+              </motion.div>
             </div>
           </div>
 
@@ -247,19 +252,25 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
           </form>
 
           <div className="mt-8">
-            <div className="relative mb-8 text-center">
-               <span className="bg-bg-surface px-4 text-[10px] text-text-muted font-extrabold tracking-[0.2em] relative z-10 uppercase">Enterprise SSO</span>
-               <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100 dark:border-slate-800"></div></div>
+            <div className="relative mb-6 text-center">
+              <span className="bg-bg-surface px-4 text-[10px] text-text-muted font-extrabold tracking-[0.2em] relative z-10 uppercase">
+                Enterprise SSO
+              </span>
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-slate-200 dark:border-slate-800"></div>
+              </div>
             </div>
 
             <button 
               type="button"
               onClick={handleGoogleLogin}
               disabled={loading}
-              className="w-full bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-text-main py-5 rounded-[24px] font-extrabold flex items-center justify-center gap-4 transition-all hover:border-brand-primary/30 hover:shadow-lg active:scale-[0.98] disabled:opacity-70"
+              className="w-full bg-slate-900 hover:bg-slate-800 dark:bg-slate-900/40 border border-slate-800 text-white py-4 rounded-2xl font-extrabold flex items-center justify-center gap-3 transition-all hover:shadow-md active:scale-[0.99] disabled:opacity-70 cursor-pointer"
             >
-              <img src="https://www.google.com/favicon.ico" alt="Google" className="w-5 h-5" />
-              Continue with Google
+              <img src="https://www.google.com/favicon.ico" alt="Google" className="w-5 h-5 block" />
+              <span className="text-white font-extrabold text-sm">
+                Continue with Google
+              </span>
             </button>
           </div>
         </div>

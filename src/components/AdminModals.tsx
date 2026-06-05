@@ -272,9 +272,9 @@ export const EditEmployeeModal: React.FC<EditEmployeeProps> = ({ isOpen, onClose
                     value={formData.cliffType || "Annually"}
                     onChange={e => setFormData({ ...formData, cliffType: e.target.value as any })}
                   >
-                    <option value="Quarterly">Quarterly Cliff (3 Months)</option>
-                    <option value="Half Yearly">Half Yearly Cliff (6 Months)</option>
-                    <option value="Annually">Annually Cliff (12 Months / Standard)</option>
+                    <option value="Quarterly" className="bg-bg-surface dark:bg-slate-900 text-text-main">Quarterly Cliff (3 Months)</option>
+                    <option value="Half Yearly" className="bg-bg-surface dark:bg-slate-900 text-text-main">Half Yearly Cliff (6 Months)</option>
+                    <option value="Annually" className="bg-bg-surface dark:bg-slate-900 text-text-main">Annually Cliff (12 Months / Standard)</option>
                   </select>
                 </div>
                 <p className="text-xs font-medium text-text-muted">
@@ -629,9 +629,9 @@ export const AddEmployeeModal: React.FC<AddEmployeeProps> = ({ isOpen, onClose, 
                   value={formData.cliffType}
                   onChange={e => setFormData({...formData, cliffType: e.target.value as any})}
                 >
-                  <option value="Quarterly">Quarterly Cliff (3 Months)</option>
-                  <option value="Half Yearly">Half Yearly Cliff (6 Months)</option>
-                  <option value="Annually">Annually Cliff (12 Months / Standard)</option>
+                  <option value="Quarterly" className="bg-bg-surface dark:bg-slate-900 text-text-main">Quarterly Cliff (3 Months)</option>
+                  <option value="Half Yearly" className="bg-bg-surface dark:bg-slate-900 text-text-main">Half Yearly Cliff (6 Months)</option>
+                  <option value="Annually" className="bg-bg-surface dark:bg-slate-900 text-text-main">Annually Cliff (12 Months / Standard)</option>
                 </select>
               </div>
             </div>
@@ -791,13 +791,13 @@ export const ManageGrantsModal: React.FC<ManageGrantsProps> = ({ isOpen, onClose
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Vesting Schedule Type</label>
                       <select 
-                        className="w-full bg-slate-50 dark:bg-slate-800 text-text-main px-3 py-2 rounded-lg text-sm font-bold outline-none border border-transparent dark:border-slate-700 focus:ring-2 focus:ring-brand-primary/10 transition-all" 
+                        className="w-full bg-slate-50 dark:bg-slate-800 text-text-main px-3 py-2 rounded-lg text-sm font-bold outline-none border border-transparent dark:border-slate-700 focus:ring-2 focus:ring-brand-primary/10 transition-all font-bold" 
                         value={grant.vestingSchedule} 
                         onChange={e => handleUpdateGrant(idx, 'vestingSchedule', e.target.value)}
                       >
-                        <option value="Quarterly Vesting (Automated)">Quarterly Vesting (Automated)</option>
-                        <option value="Monthly Vesting (Automated)">Monthly Vesting (Automated)</option>
-                        <option value="Immediate">Immediate Vesting</option>
+                        <option value="Quarterly Vesting (Automated)" className="bg-bg-surface dark:bg-slate-900 text-text-main">Quarterly Vesting (Automated)</option>
+                        <option value="Monthly Vesting (Automated)" className="bg-bg-surface dark:bg-slate-900 text-text-main">Monthly Vesting (Automated)</option>
+                        <option value="Immediate" className="bg-bg-surface dark:bg-slate-900 text-text-main">Immediate Vesting</option>
                       </select>
                     </div>
                     <div className="space-y-1">

@@ -25,7 +25,7 @@ export const VestingBar: React.FC<VestingBarProps> = ({ vested, exercised, total
         </div>
         <span className="text-xs text-text-main tabular-nums">{fmt(vested)} / {fmt(total)} shares</span>
       </div>
-      <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden relative shadow-inner">
+      <div className="h-3 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden relative shadow-inner">
         <div 
           className="absolute left-0 top-0 h-full bg-brand-primary/20 rounded-full"
           style={{ width: `${vestedPct}%` }}
@@ -45,7 +45,7 @@ export const VestingBar: React.FC<VestingBarProps> = ({ vested, exercised, total
           Vested
         </div>
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider font-bold text-text-muted">
-          <div className="w-2.5 h-2.5 rounded-full bg-slate-200" />
+          <div className="w-2.5 h-2.5 rounded-full bg-slate-200 dark:bg-slate-700" />
           Unvested
         </div>
       </div>

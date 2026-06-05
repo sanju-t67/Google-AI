@@ -44,6 +44,9 @@ import {
   Send,
   PenTool,
   CheckSquare,
+  Cloud,
+  FolderOpen,
+  RefreshCw,
 } from "lucide-react";
 import { Admin, Employee, Grant, AuditLog } from "../types";
 import { Avatar, StatusBadge } from "./ui/Shared";
@@ -88,7 +91,8 @@ import {
   uploadChunkedPolicy,
 } from "../services/dataService";
 import Papa from "papaparse";
-import { auth } from "../lib/firebase";
+import { auth, googleProvider } from "../lib/firebase";
+import { signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 
 interface Props {
   user: Admin;
@@ -100,6 +104,15 @@ export const AdminDashboard: React.FC<Props> = ({
   onLogout,
 }) => {
   const [user, setUser] = useState<Admin>(initialUser);
+
+  const [googleAuthToken, setGoogleAuthToken] = useState<string | null>(null);
+  const [googleUserEmail, setGoogleUserEmail] = useState<string | null>(null);
+  const [folders, setFolders] = useState<{ id: string; name: string }[]>([]);
+  const [loadingFolders, setLoadingFolders] = useState(false);
+  const [isPerformingBackup, setIsPerformingBackup] = useState(false);
+  const [backupSuccess, setBackupSuccess] = useState<string | null>(null);
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const [gmailStatusMsg, setGmailStatusMsg] = useState<string | null>(null);
 
   const formatDateTimeSafe = (dateStr?: string) => {
     if (!dateStr) return "-";
@@ -185,6 +198,108 @@ export const AdminDashboard: React.FC<Props> = ({
   const [googleDocUrlInput, setGoogleDocUrlInput] = useState<string>("");
   const [isSyncingGoogleDoc, setIsSyncingGoogleDoc] = useState<boolean>(false);
 
+  // Email Notification drafts state definitions
+  const [draftTemplateType, setDraftTemplateType] = useState<"welcome" | "esign_reminder" | "vesting" | "admin">("welcome");
+  const [draftSubject, setDraftSubject] = useState("");
+  const [draftBody, setDraftBody] = useState("");
+  const [draftSaveStatus, setDraftSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [draftSaveMessage, setDraftSaveMessage] = useState("");
+
+  React.useEffect(() => {
+    if (!companySettings) return;
+    if (draftTemplateType === "welcome") {
+      setDraftSubject(companySettings.emailTemplateWelcomeSubject ?? "TeachVest Invitation: Access Your Employee ESOP Dashboard");
+      setDraftBody(companySettings.emailTemplateWelcomeBody ?? `<div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #eef2ff; border-radius: 12px; max-width: 600px; border: 1px solid #e0e7ff;">
+  <h2 style="color: #0052ff; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">Welcome to TeachVest, {{STAKEHOLDER_NAME}}!</h2>
+  <p style="font-size: 14px; line-height: 1.5; color: #475569;">An official employee profile has been created for you on the TeachVest platform by your company administrator.</p>
+  
+  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+    <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Your Login Credentials</p>
+    <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Login Username:</strong> {{EMPLOYEE_EMAIL}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Temporary Password:</strong> {{PASSWORD}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Employee Designation:</strong> {{DESIGNATION}} ({{DEPARTMENT}})</p>
+  </div>
+
+  <p style="font-size: 14px; line-height: 1.5; color: #475569;">To securely inspect, monitor and exercise your vesting ESOP shares, please log in to your employee dashboard using the button below:</p>
+  
+  <div style="text-align: center; margin: 25px 0;">
+    <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Enter TeachVest Portal</a>
+  </div>
+
+  <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; line-height: 1.4;">
+    Security Policy: This is an automated security mail dispatch. If you did not expect these credentials or have security questions, please contact your TeachVest Cap-Table HR administrator immediately.
+  </p>
+</div>`);
+    } else if (draftTemplateType === "esign_reminder") {
+      setDraftSubject(companySettings.emailTemplateReminderSubject ?? "Urgent Action Required: Teachmint ESOP Grant E-Signature Request");
+      setDraftBody(companySettings.emailTemplateReminderBody ?? `<div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #fffbeb; border-radius: 12px; max-width: 600px; border: 1px solid #fef3c7;">
+  <h2 style="color: #b45309; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">Digital Signature Outstanding</h2>
+  <p style="font-size: 14px; line-height: 1.5; color: #475569;">Hello {{STAKEHOLDER_NAME}}, your ESOP Options Allocation Offer <strong>{{GRANT_ID}}</strong> representing <strong>{{SHARES_QUANTITY}} Options</strong> is awaiting your e-signature execution.</p>
+  
+  <div style="background: white; border: 1px solid #fef3c7; border-radius: 12px; padding: 18px; margin: 20px 0;">
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Grant Reference:</strong> {{GRANT_ID}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Strike Option Price:</strong> INR {{STRIKE_PRICE}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Sign-off Status:</strong> Pending Stakeholder Signature</p>
+  </div>
+
+  <p style="font-size: 14px; line-height: 1.5; color: #475569;">Please log in securely to complete signing and execute your digital ESOP Grant Certificate contract:</p>
+  
+  <div style="text-align: center; margin: 25px 0;">
+    <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Review & E-Sign Offer Letter</a>
+  </div>
+</div>`);
+    } else if (draftTemplateType === "vesting") {
+      setDraftSubject(companySettings.emailTemplateVestingSubject ?? "Teachmint options vested today! ({{VESTED_DATE}})");
+      setDraftBody(companySettings.emailTemplateVestingBody ?? `<div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #eef2ff; border-radius: 12px; max-width: 600px; border: 1px solid #e0e7ff;">
+  <h3 style="color: #6366f1; margin-bottom: 12px; font-weight: 800; font-family: sans-serif;">Automated Option Vesting Notification</h3>
+  <p style="font-size: 14px; line-height: 1.6; color: #475569; font-family: sans-serif;">
+    Hi <strong>{{STAKEHOLDER_NAME}}</strong>,
+  </p>
+  <p style="font-size: 14px; line-height: 1.6; color: #475569; font-family: sans-serif;">
+    We are happy to inform you that <strong>{{VESTED_SHARES}}</strong> options got vested on <strong>{{VESTED_DATE}}</strong> for your grant under <strong>Teachmint Technologies Private Limited Employees’ Stock Option Plan 2020</strong>.
+  </p>
+  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+    <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Vesting Milestone Stats</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Milestone Date:</strong> {{VESTED_DATE}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Newly Vested Options:</strong> {{VESTED_SHARES}} units</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Cumulative Vested Options:</strong> {{CUMULATIVE_VESTED_SHARES}} units</p>
+  </div>
+  <div style="text-align: center; margin: 25px 0;">
+    <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0052ff; color: white; padding: 12px 24px; border-radius: 10px; font-weight: bold; text-decoration: none; font-size: 13px; font-family: sans-serif;">Login to TeachVest Dashboard</a>
+  </div>
+  <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; font-family: sans-serif;">
+    Regards,<br/>
+    <strong>Teachmint HR Operations</strong>
+  </p>
+</div>`);
+    } else if (draftTemplateType === "admin") {
+      setDraftSubject(companySettings.emailTemplateAdminSubject ?? "TeachVest Invitation: Administrator Access Granted");
+      setDraftBody(companySettings.emailTemplateAdminBody ?? `<div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #f8fafc; border-radius: 12px; max-width: 600px; border: 1px solid #e2e8f0;">
+  <h2 style="color: #0052ff; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">TeachVest Administrator Access Activated</h2>
+  <p style="font-size: 14px; line-height: 1.5; color: #475569;">You have been granted official Administrator privileges on the TeachVest Capital Cap-Table and ESOP Management System.</p>
+  
+  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+    <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Your Administrator Credentials</p>
+    <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Login Username:</strong> {{ADMIN_EMAIL}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Temporary Password:</strong> {{PASSWORD}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Assigned Access Role:</strong> Platform Administrator / Board Observer</p>
+  </div>
+
+  <p style="font-size: 14px; line-height: 1.5; color: #475569;">Use corporate administrator portal access to define stock metrics, edit employee grants, attach critical legal documents and supervise active vestings.</p>
+  
+  <div style="text-align: center; margin: 25px 0;">
+    <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Enter Admin Dashboard</a>
+  </div>
+
+  <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; line-height: 1.4;">
+    Security Alert: Keep these credentials stored securely. Do not share your login details with any unverified accounts. All access sessions are logged for audit compliance.
+  </p>
+</div>`);
+    }
+  }, [draftTemplateType, companySettings]);
+
   // High-fidelity local PDF template editor states
   const [pdfEditorSection, setPdfEditorSection] = useState<
     "header" | "content" | "footer"
@@ -263,7 +378,7 @@ export const AdminDashboard: React.FC<Props> = ({
 
   // Corporate settings sub-navigation tab
   const [settingsSubTab, setSettingsSubTab] = useState<
-    "general" | "template" | "signatory" | "policy" | "approvals" | "emails"
+    "general" | "template" | "signatory" | "policy" | "approvals" | "emails" | "integrations" | "emailTemplates"
   >("general");
 
   // Grant pause/shift editing states
@@ -362,6 +477,24 @@ export const AdminDashboard: React.FC<Props> = ({
       unsubAuditLogs();
     };
   }, []);
+
+  // Automatic Daily Backup schedule trigger inside active admin dashboard session
+  React.useEffect(() => {
+    if (googleAuthToken && companySettings?.backupDriveFolderId) {
+      const lastBackup = companySettings.lastBackupDate;
+      const today = new Date().toISOString().split("T")[0];
+      const folderId = companySettings.backupDriveFolderId;
+      const folderName = companySettings.backupDriveFolderName || "Selected Folder";
+
+      const shouldBackup = !lastBackup || !lastBackup.startsWith(today);
+      if (shouldBackup) {
+        console.log("Triggering silent daily backup snapshot to Google Drive folder:", folderName);
+        executeBackupToDrive(googleAuthToken, folderId, folderName).catch((err) => {
+          console.error("Automated check failed:", err);
+        });
+      }
+    }
+  }, [googleAuthToken, companySettings?.backupDriveFolderId, companySettings?.lastBackupDate]);
 
   const handleUpdatePool = async () => {
     setSettingsSuccess("");
@@ -758,6 +891,228 @@ export const AdminDashboard: React.FC<Props> = ({
     }
   };
 
+  const buildRawEmail = (to: string, from: string, subject: string, bodyHtml: string) => {
+    const mailLines = [
+      `From: ${from}`,
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      `MIME-Version: 1.0`,
+      `Content-Type: text/html; charset=utf-8`,
+      ``,
+      bodyHtml
+    ];
+    const email = mailLines.join("\r\n");
+    // Secure Base64 encode supporting multi-byte unicode strings safely in standard browsers
+    return btoa(unescape(encodeURIComponent(email)))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+  };
+
+  const sendEmailWithOptionalGmail = async (
+    recipient: string,
+    name: string,
+    role: "employee" | "admin",
+    subject: string,
+    body: string,
+    password?: string
+  ) => {
+    let sentReal = false;
+    if (googleAuthToken) {
+      try {
+        const fromAddress = googleUserEmail || companySettings.senderEmailId || user.email;
+        const rawEmail = buildRawEmail(recipient, fromAddress, subject, body);
+        const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${googleAuthToken}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ raw: rawEmail })
+        });
+        if (res.ok) {
+          sentReal = true;
+          console.log(`Dispatched real email to ${recipient} via Gmail API.`);
+        } else {
+          const errText = await res.text();
+          console.warn("Gmail send API failed, using standard DB logging as backup fallback:", errText);
+        }
+      } catch (err) {
+        console.error("Gmail background proxy failed:", err);
+      }
+    }
+
+    // Standard database system log
+    await sendSystemEmail({
+      recipient,
+      name,
+      role,
+      subject,
+      body,
+      password,
+      sender: companySettings.senderEmailId || googleUserEmail || "System alerts"
+    });
+
+    return sentReal;
+  };
+
+  const fetchFolders = async (token: string) => {
+    setLoadingFolders(true);
+    try {
+      const res = await fetch(
+        "https://www.googleapis.com/drive/v3/files?q=mimeType%3D%27application%2Fvnd.google-apps.folder%27%20and%20trashed%3Dfalse&fields=files(id,name)",
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setFolders(data.files || []);
+      }
+    } catch (err) {
+      console.error("Error loading folders from Drive API:", err);
+    } finally {
+      setLoadingFolders(false);
+    }
+  };
+
+  const handleConnectGoogleWorkspace = async () => {
+    try {
+      setBackupError(null);
+      setBackupSuccess(null);
+      const provider = new GoogleAuthProvider();
+      provider.addScope("https://www.googleapis.com/auth/gmail.send");
+      provider.addScope("https://www.googleapis.com/auth/drive.file");
+      provider.addScope("https://www.googleapis.com/auth/drive.metadata.readonly");
+
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      const token = credential?.accessToken;
+      if (token) {
+        setGoogleAuthToken(token);
+        setGoogleUserEmail(result.user.email);
+        setBackupSuccess("Google Workspace connected successfully!");
+        fetchFolders(token);
+      } else {
+        setBackupError("Could not obtain access privileges from sign-in outcome.");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setBackupError(`Google login authorization failed: ${err.message || err}`);
+    }
+  };
+
+  const handleCreateBackupFolder = async () => {
+    if (!googleAuthToken) return;
+    try {
+      setBackupError(null);
+      setBackupSuccess("Creating folder 'TeachVest Backups'...");
+      const res = await fetch("https://www.googleapis.com/drive/v3/files", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${googleAuthToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          name: "TeachVest Backups",
+          mimeType: "application/vnd.google-apps.folder"
+        })
+      });
+      if (res.ok) {
+        const folder = await res.json();
+        setBackupSuccess("Backup folder created successfully!");
+        await fetchFolders(googleAuthToken);
+        await updateCompanySettings({
+          backupDriveFolderId: folder.id,
+          backupDriveFolderName: "TeachVest Backups"
+        }, user.email);
+      } else {
+        const errText = await res.text();
+        setBackupError(`Failed to create Drive folder: ${errText}`);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setBackupError(`Folder creation error: ${err.message}`);
+    }
+  };
+
+  const executeBackupToDrive = async (token: string, folderId: string, folderName: string) => {
+    setIsPerformingBackup(true);
+    setBackupSuccess(null);
+    setBackupError(null);
+    try {
+      const backupPayload = {
+        backupTimestamp: new Date().toISOString(),
+        companySettings,
+        employees,
+        sentEmails: emails,
+        auditLogs
+      };
+
+      const content = JSON.stringify(backupPayload, null, 2);
+      const today = new Date().toISOString().split("T")[0];
+      const filename = `TeachVest_Backup_${today}.json`;
+
+      const metaRes = await fetch("https://www.googleapis.com/drive/v3/files", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          name: filename,
+          parents: [folderId],
+          mimeType: "application/json"
+        })
+      });
+
+      if (!metaRes.ok) {
+        const errText = await metaRes.text();
+        throw new Error(`Failed to initialize backup manifest: ${errText}`);
+      }
+
+      const fileInfo = await metaRes.json();
+      if (!fileInfo || !fileInfo.id) {
+        throw new Error("Invalid descriptor returned by Drive client.");
+      }
+
+      const mediaRes = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileInfo.id}?uploadType=media`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: content
+      });
+
+      if (!mediaRes.ok) {
+        const errText = await mediaRes.text();
+        throw new Error(`Drive write aborted: ${errText}`);
+      }
+
+      await updateCompanySettings({
+        lastBackupDate: new Date().toISOString()
+      }, user.email);
+
+      await createAuditLog(
+        "Google Drive Backup",
+        `Created daily DB backup manifest "${filename}" inside Google Drive folder "${folderName}"`,
+        user.email
+      );
+
+      setBackupSuccess(`Backup snapshot completed! File "${filename}" saved successfully standard in "${folderName}".`);
+      return true;
+    } catch (err: any) {
+      console.error(err);
+      setBackupError(`Backup session failed: ${err.message || err}`);
+      return false;
+    } finally {
+      setIsPerformingBackup(false);
+    }
+  };
+
   const handleTriggerIndividualEmail = async (
     emp: Employee,
     emailType: "welcome" | "esign_reminder",
@@ -772,57 +1127,83 @@ export const AdminDashboard: React.FC<Props> = ({
         ? grant.totalShares.toLocaleString()
         : "0";
 
+      const variables = {
+        "{{STAKEHOLDER_NAME}}": emp.name,
+        "{{EMPLOYEE_EMAIL}}": emp.email,
+        "{{PASSWORD}}": emp.password || "login123",
+        "{{DESIGNATION}}": emp.designation || "",
+        "{{DEPARTMENT}}": emp.department || "",
+        "{{PORTAL_URL}}": window.location.origin + "/?role=employee&email=" + encodeURIComponent(emp.email),
+        "{{GRANT_ID}}": grantId,
+        "{{SHARES_QUANTITY}}": totalSharesFormatted,
+        "{{STRIKE_PRICE}}": String(grant?.strikePrice || 10)
+      };
+
+      const replaceTokensClient = (template: string, vars: Record<string, string>) => {
+        let result = template;
+        for (const [key, value] of Object.entries(vars)) {
+          const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          result = result.replace(new RegExp(escapedKey, 'g'), value || '');
+        }
+        return result;
+      };
+
       if (emailType === "welcome") {
-        subject = `TeachVest Invitation: Access Your Employee ESOP Dashboard`;
-        body = `
+        const rawSub = companySettings.emailTemplateWelcomeSubject || `TeachVest Invitation: Access Your Employee ESOP Dashboard`;
+        const rawBody = companySettings.emailTemplateWelcomeBody || `
           <div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #eef2ff; border-radius: 12px; max-width: 600px; border: 1px solid #e0e7ff;">
-            <h2 style="color: #0052ff; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">Welcome to TeachVest, ${emp.name}!</h2>
+            <h2 style="color: #0a52f7; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">Welcome to TeachVest, {{STAKEHOLDER_NAME}}!</h2>
             <p style="font-size: 14px; line-height: 1.5; color: #475569;">An official employee profile has been created for you on the TeachVest platform by your company administrator.</p>
             
             <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
-              <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Your Login Credentials</p>
-              <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
-              <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Login Username:</strong> ${emp.email}</p>
-              <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Temporary Password:</strong> ${emp.password || "login123"}</p>
-              <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Employee Designation:</strong> ${emp.designation} (${emp.department})</p>
+               <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Your Login Credentials</p>
+               <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
+               <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Login Username:</strong> {{EMPLOYEE_EMAIL}}</p>
+               <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Temporary Password:</strong> {{PASSWORD}}</p>
+               <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Employee Designation:</strong> {{DESIGNATION}} ({{DEPARTMENT}})</p>
             </div>
 
             <p style="font-size: 14px; line-height: 1.5; color: #475569;">To securely inspect, monitor and manage your vesting ESOP shares, please log in to your employee dashboard:</p>
             
             <div style="text-align: center; margin: 25px 0;">
-              <a href="/?role=employee&email=${encodeURIComponent(emp.email)}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Enter TeachVest Portal</a>
+              <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0a52f7; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(10, 82, 247, 0.2);">Enter TeachVest Portal</a>
             </div>
           </div>
-        `.trim();
+        `;
+        subject = replaceTokensClient(rawSub, variables);
+        body = replaceTokensClient(rawBody, variables).trim();
       } else {
-        subject = `Urgent Action Required: Teachmint ESOP Grant E-Signature Request`;
-        body = `
+        const rawSub = companySettings.emailTemplateReminderSubject || `Urgent Action Required: Teachmint ESOP Grant E-Signature Request`;
+        const rawBody = companySettings.emailTemplateReminderBody || `
           <div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #fffbeb; border-radius: 12px; max-width: 600px; border: 1px solid #fef3c7;">
             <h2 style="color: #b45309; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">Digital Signature Outstanding</h2>
-            <p style="font-size: 14px; line-height: 1.5; color: #475569;">Hello ${emp.name}, your ESOP Options Allocation Offer <strong>${grantId}</strong> representing <strong>${totalSharesFormatted} Options</strong> is awaiting your e-signature execution.</p>
+            <p style="font-size: 14px; line-height: 1.5; color: #475569;">Hello {{STAKEHOLDER_NAME}}, your ESOP Options Allocation Offer <strong>{{GRANT_ID}}</strong> representing <strong>{{SHARES_QUANTITY}} Options</strong> is awaiting your e-signature execution.</p>
             
             <div style="background: white; border: 1px solid #fef3c7; border-radius: 12px; padding: 18px; margin: 20px 0;">
-              <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Grant Reference:</strong> ${grantId}</p>
-              <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Strike Option Price:</strong> INR ${grant?.strikePrice || 10}</p>
+              <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Grant Reference:</strong> {{GRANT_ID}}</p>
+              <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Strike Option Price:</strong> INR {{STRIKE_PRICE}}</p>
               <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Sign-off Status:</strong> Pending Stakeholder Signature</p>
             </div>
 
             <p style="font-size: 14px; line-height: 1.5; color: #475569;">Please log in securely to complete signing and execute your digital ESOP Grant Certificate contract:</p>
             
             <div style="text-align: center; margin: 25px 0;">
-              <a href="/?role=employee&email=${encodeURIComponent(emp.email)}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Review & E-Sign Offer Letter</a>
+              <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0a52f7; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(10, 82, 247, 0.2);">Review & E-Sign Offer Letter</a>
             </div>
           </div>
-        `.trim();
+        `;
+        subject = replaceTokensClient(rawSub, variables);
+        body = replaceTokensClient(rawBody, variables).trim();
       }
 
-      await sendSystemEmail({
-        recipient: emp.email,
-        name: emp.name,
-        role: "employee",
+      await sendEmailWithOptionalGmail(
+        emp.email,
+        emp.name,
+        "employee",
         subject,
         body,
-      });
+        emp.password
+      );
 
       await createAuditLog(
         "Manual Email Trigger",
@@ -1111,11 +1492,11 @@ export const AdminDashboard: React.FC<Props> = ({
     <div className="min-h-screen bg-bg-base flex transition-colors duration-300">
       {/* Sidebar - Teachmint style sidebar */}
       <aside className="w-72 bg-bg-surface border-r border-slate-100 dark:border-slate-800 flex flex-col sticky top-0 h-screen z-50 transition-colors">
-        <div className="p-8 pb-10">
-          <div className="flex items-center gap-4 group cursor-pointer">
+        <div className="p-8 pb-10 pb-6">
+          <div className="flex items-center gap-3 group cursor-pointer">
             <motion.div
-              whileHover={{ rotate: 10, scale: 1.1 }}
-              className="w-12 h-12 rounded-2xl bg-white overflow-hidden shadow-xl"
+              whileHover={{ rotate: 5, scale: 1.05 }}
+              className="w-12 h-12 rounded-2xl bg-white overflow-hidden shadow-xl flex items-center justify-center flex-shrink-0"
             >
               <img
                 src={logoUrl}
@@ -1123,14 +1504,17 @@ export const AdminDashboard: React.FC<Props> = ({
                 className="w-full h-full object-contain p-1"
               />
             </motion.div>
-            <div className="flex flex-col min-w-0">
+            <motion.div
+              whileHover={{ rotate: -2, scale: 1.03 }}
+              className="h-12 px-4 rounded-2xl bg-white flex items-center justify-center shadow-xl overflow-hidden flex-shrink-0 border border-slate-100 dark:border-slate-200/10"
+            >
               <img
                 src={otherLogoUrl}
                 alt="TeachVest"
-                className="h-8 object-contain"
+                className="h-6 object-contain"
                 referrerPolicy="no-referrer"
               />
-            </div>
+            </motion.div>
           </div>
         </div>
 
@@ -1388,7 +1772,7 @@ export const AdminDashboard: React.FC<Props> = ({
                           className="bg-transparent border-none outline-none text-[11px] font-extrabold text-text-muted cursor-pointer uppercase tracking-widest"
                         >
                           {departments.map((d) => (
-                            <option key={d}>{d}</option>
+                            <option key={d} className="bg-bg-surface dark:bg-slate-900 text-text-main">{d}</option>
                           ))}
                         </select>
                       </div>
@@ -2009,16 +2393,16 @@ export const AdminDashboard: React.FC<Props> = ({
                                             }}
                                             className="w-full text-xs font-bold p-2 rounded-lg bg-bg-surface border border-slate-200 dark:border-slate-700 focus:outline-none"
                                           >
-                                            <option value="2-decimal">
+                                            <option value="2-decimal" className="bg-bg-surface dark:bg-slate-900 text-text-main font-extrabold">
                                               2 Decimals (Standard corporate)
                                             </option>
-                                            <option value="4-decimal">
+                                            <option value="4-decimal" className="bg-bg-surface dark:bg-slate-900 text-text-main font-extrabold">
                                               4 Decimals (High precision)
                                             </option>
-                                            <option value="nearest_integer">
+                                            <option value="nearest_integer" className="bg-bg-surface dark:bg-slate-900 text-text-main font-extrabold">
                                               Nearest Integer (Truncated)
                                             </option>
-                                            <option value="none">
+                                            <option value="none" className="bg-bg-surface dark:bg-slate-900 text-text-main font-extrabold">
                                               No Rounding (Calculated density)
                                             </option>
                                           </select>
@@ -2398,7 +2782,7 @@ export const AdminDashboard: React.FC<Props> = ({
                                                 {companySettings.grantLetterCompanyAddress ||
                                                   "Regd Office: Bangalore, Landmark Tower, Sector 3A, India"}
                                               </p>
-                                              <p className="text-[9px] font-bold text-slate-600 dark:text-slate-350 tracking-widest uppercase">
+                                              <p className="text-[9px] font-bold text-slate-600 dark:text-slate-400 tracking-widest uppercase">
                                                 {companySettings.grantLetterCompanyCIN ||
                                                   "CIN: U72900KA2020PTC139045"}
                                               </p>
@@ -2853,14 +3237,13 @@ export const AdminDashboard: React.FC<Props> = ({
                                                   );
 
                                                   // Log system email notification to employee
-                                                  await sendSystemEmail({
-                                                    recipient:
-                                                      selectedEmployee.email,
-                                                    name: selectedEmployee.name,
-                                                    role: "employee",
-                                                    subject:
+                                                  await sendEmailWithOptionalGmail(
+                                                    selectedEmployee.email,
+                                                    selectedEmployee.name,
+                                                    "employee",
+
                                                       "Teachmint ESOP Offer Letter Out for Your E-Signature!",
-                                                    body: `
+`
                                                   <div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #eef2ff; border-radius: 12px; max-width: 600px; border: 1px solid #e0e7ff;">
                                                     <h3 style="color: #6366f1; margin-bottom: 12px; font-weight: 800;">Action Required: E-Sign Your Grant Letter</h3>
                                                     <p style="font-size: 14px; line-height: 1.6; color: #475569;">
@@ -2880,7 +3263,8 @@ export const AdminDashboard: React.FC<Props> = ({
                                                     </p>
                                                   </div>
                                                 `.trim(),
-                                                  });
+                                                    selectedEmployee.password
+                                                  );
 
                                                   await createAuditLog(
                                                     "Signatory Signature Approved",
@@ -3505,16 +3889,16 @@ export const AdminDashboard: React.FC<Props> = ({
                           <select
                             value={deptFilter}
                             onChange={(e) => setDeptFilter(e.target.value)}
-                            className="bg-transparent border-none outline-none text-[10px] font-extrabold text-text-muted cursor-pointer uppercase tracking-wider"
+                            className="bg-transparent border-none outline-none text-[10px] font-extrabold text-text-muted cursor-pointer uppercase tracking-wider text-text-main"
                           >
-                            <option value="All">All Categories</option>
-                            <option value="Create">
+                            <option value="All" className="bg-bg-surface dark:bg-slate-900 text-text-main">All Categories</option>
+                            <option value="Create" className="bg-bg-surface dark:bg-slate-900 text-text-main">
                               Register Stakeholders
                             </option>
-                            <option value="Edit">Edit Employees</option>
-                            <option value="Delete">Delete Operations</option>
-                            <option value="Settings">System Settings</option>
-                            <option value="Administrator">
+                            <option value="Edit" className="bg-bg-surface dark:bg-slate-900 text-text-main">Edit Employees</option>
+                            <option value="Delete" className="bg-bg-surface dark:bg-slate-900 text-text-main">Delete Operations</option>
+                            <option value="Settings" className="bg-bg-surface dark:bg-slate-900 text-text-main">System Settings</option>
+                            <option value="Administrator" className="bg-bg-surface dark:bg-slate-900 text-text-main">
                               Permission Changes
                             </option>
                           </select>
@@ -3701,6 +4085,16 @@ export const AdminDashboard: React.FC<Props> = ({
                           id: "emails",
                           label: "Manual Notification Desk",
                           icon: Mail,
+                        },
+                        {
+                          id: "emailTemplates",
+                          label: "Trigger Email Templates",
+                          icon: Edit3 || FileText,
+                        },
+                        {
+                          id: "integrations",
+                          label: "Google Workspace & Backups",
+                          icon: Cloud,
                         },
                       ].map((sub) => {
                         const isCurrent = settingsSubTab === sub.id;
@@ -5338,6 +5732,614 @@ export const AdminDashboard: React.FC<Props> = ({
                                 </div>
                               </div>
                             )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* GOOGLE WORKSPACE & BACKUPS SUB-TAB */}
+                      {settingsSubTab === "integrations" && (
+                        <div className="space-y-8 animate-fadeIn">
+                          {/* Google Connection & Backup Folder Settings Card */}
+                          <div className="p-8 rounded-[32px] bg-bg-base dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm space-y-6">
+                            <div className="flex items-start justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
+                              <div>
+                                <span className="font-extrabold text-text-main tracking-tight text-lg flex items-center gap-2">
+                                  <Cloud className="text-brand-primary" size={20} />
+                                  Google Drive Automatic Daily Backup Settings
+                                </span>
+                                <p className="text-xs text-text-muted font-bold uppercase tracking-widest mt-0.5">
+                                  Define backup rules, targets, and automatic sync configurations
+                                </p>
+                              </div>
+                              <span className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold uppercase border ${googleAuthToken ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-slate-500/10 text-slate-500 border-slate-500/20"}`}>
+                                {googleAuthToken ? "Connected" : "Not connected"}
+                              </span>
+                            </div>
+
+                            {backupSuccess && (
+                              <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center gap-2">
+                                <CheckCircle2 size={16} />
+                                <span>{backupSuccess}</span>
+                              </div>
+                            )}
+
+                            {backupError && (
+                              <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-rose-600 dark:text-rose-400 text-xs font-bold flex items-center gap-2">
+                                <AlertCircle size={16} />
+                                <span>{backupError}</span>
+                              </div>
+                            )}
+
+                            {!googleAuthToken ? (
+                              <div className="p-8 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-4">
+                                <Cloud className="mx-auto text-slate-300 dark:text-slate-700" size={48} />
+                                <div className="space-y-1">
+                                  <h4 className="font-extrabold text-sm text-text-main">
+                                    Google Drive Backup is Currently Offline
+                                  </h4>
+                                  <p className="text-xs text-text-muted max-w-md mx-auto leading-relaxed">
+                                    To enable automatic daily backups of your complete ESOP cap-table, email logs, and company settings, connect your corporate Google Workspace administrator account.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={handleConnectGoogleWorkspace}
+                                  className="mx-auto flex items-center gap-2 px-6 py-3.5 bg-slate-900 hover:bg-black text-white dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 rounded-xl text-xs font-black uppercase tracking-wider shadow-lg hover:scale-[1.02] transition-all"
+                                >
+                                  <Cloud size={16} />
+                                  Connect Google Workspace Account
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="space-y-6">
+                                {/* Connected account strip */}
+                                <div className="p-5 rounded-2xl bg-emerald-500/[0.02] border border-emerald-500/15 flex items-center justify-between">
+                                  <div className="flex items-center gap-4">
+                                    <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                                      <Cloud size={20} />
+                                    </div>
+                                    <div>
+                                      <p className="font-extrabold text-xs text-text-main">
+                                        Google Account Connected
+                                      </p>
+                                      <p className="text-xs font-medium text-text-muted">
+                                        {googleUserEmail}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setGoogleAuthToken(null);
+                                      setGoogleUserEmail(null);
+                                      setBackupSuccess("Disconnected successfully.");
+                                    }}
+                                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition-all"
+                                  >
+                                    Disconnect
+                                  </button>
+                                </div>
+
+                                {/* Folder adding options */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                  {/* Folder Select Dropdown */}
+                                  <div className="p-6 rounded-2xl border border-slate-100 dark:border-slate-800 bg-bg-surface dark:bg-slate-950 space-y-4">
+                                    <div className="space-y-1">
+                                      <span className="text-[10px] font-extrabold text-brand-primary uppercase tracking-[0.2em] block">
+                                        Add Backup Target Folder
+                                      </span>
+                                      <p className="text-xs text-text-muted leading-relaxed">
+                                        Select an existing Google Drive folder to house the automatic daily backups.
+                                      </p>
+                                    </div>
+
+                                    {loadingFolders ? (
+                                      <div className="text-xs text-text-muted py-2 font-bold animate-pulse">
+                                        Fetching active folders list...
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-3">
+                                        <select
+                                          value={companySettings.backupDriveFolderId || ""}
+                                          onChange={async (e) => {
+                                            const selectedId = e.target.value;
+                                            const selectedFolder = folders.find(f => f.id === selectedId);
+                                            if (selectedFolder) {
+                                              await updateCompanySettings({
+                                                backupDriveFolderId: selectedFolder.id,
+                                                backupDriveFolderName: selectedFolder.name
+                                              }, user.email);
+                                              setBackupSuccess(`Google Drive backup folder successfully targeted: "${selectedFolder.name}"!`);
+                                              await createAuditLog(
+                                                "Target Backup Folder Set",
+                                                `Changed target daily backup Google Drive folder to "${selectedFolder.name}" (ID: ${selectedFolder.id})`,
+                                                user.email
+                                              );
+                                            } else if (selectedId === "") {
+                                              await updateCompanySettings({
+                                                backupDriveFolderId: "",
+                                                backupDriveFolderName: ""
+                                              }, user.email);
+                                              setBackupSuccess(`Cleared backup target folder.`);
+                                            }
+                                          }}
+                                          className="w-full px-4 py-3 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-800 bg-bg-base dark:bg-slate-900 text-text-main outline-none focus:ring-4 focus:ring-brand-primary/5 transition-all"
+                                        >
+                                          <option value="">-- Choose target Google Drive folder --</option>
+                                          {folders.map((f) => (
+                                            <option key={f.id} value={f.id}>
+                                              {f.name} (ID: {f.id.slice(0, 8)}...)
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <button
+                                          type="button"
+                                          onClick={() => fetchFolders(googleAuthToken)}
+                                          className="text-[10px] font-black text-brand-primary uppercase tracking-wider flex items-center gap-1 hover:underline"
+                                        >
+                                          Refresh Folders List
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Auto Create Folder Selection */}
+                                  <div className="p-6 rounded-2xl border border-slate-100 dark:border-slate-800 bg-bg-surface dark:bg-slate-950 flex flex-col justify-between">
+                                    <div className="space-y-1">
+                                      <span className="text-[10px] font-extrabold text-text-muted uppercase tracking-[0.2em] block">
+                                        Quick Create Folder Option
+                                      </span>
+                                      <p className="text-xs text-text-muted leading-relaxed">
+                                        Don't have a backup folder ready? Generate a dedicated folder named <strong>"TeachVest Backups"</strong> in your Google Drive with a single click.
+                                      </p>
+                                    </div>
+                                    <div className="pt-4">
+                                      <button
+                                        type="button"
+                                        onClick={handleCreateBackupFolder}
+                                        className="w-full py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-text-main rounded-xl text-xs font-black uppercase tracking-wider transition-all"
+                                      >
+                                        Create "TeachVest Backups" Folder
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Current selection status + Manual backup trigger */}
+                                {companySettings.backupDriveFolderId && (
+                                  <div className="p-6 rounded-2xl bg-indigo-500/[0.02] border border-indigo-500/10 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="space-y-0.5">
+                                        <div className="text-[10px] font-extrabold text-indigo-500 uppercase tracking-widest">
+                                          Active Google Backup Configuration
+                                        </div>
+                                        <p className="text-xs font-bold text-text-main">
+                                          Target Folder: <span className="text-indigo-600 font-black">"{companySettings.backupDriveFolderName || "Custom Folder"}"</span>
+                                        </p>
+                                        <p className="text-[11px] text-text-muted mt-1 font-semibold">
+                                          {companySettings.lastBackupDate 
+                                            ? `Last successful execution log: ${formatDateTimeSafe(companySettings.lastBackupDate)}`
+                                            : "No daily backup has executed on this folder yet."
+                                          }
+                                        </p>
+                                      </div>
+                                      <div className="flex flex-col items-end text-right">
+                                        <span className="flex items-center gap-1.5 text-xs text-emerald-500 font-bold mb-1">
+                                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                          Auto Snapshot Active
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    <div className="pt-2 flex items-center justify-end">
+                                      <button
+                                        type="button"
+                                        disabled={isPerformingBackup}
+                                        onClick={() => executeBackupToDrive(
+                                          googleAuthToken,
+                                          companySettings.backupDriveFolderId!,
+                                          companySettings.backupDriveFolderName || "Selected Folder"
+                                        )}
+                                        className="px-6 py-3.5 bg-brand-primary text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg hover:scale-[1.01] transition-all disabled:opacity-50"
+                                      >
+                                        {isPerformingBackup ? "Uploading Database Snapshot..." : "Trigger Backup Check & Upload Snapshot Now"}
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 9 AM Automated Vesting Notification Config Card */}
+                          <div className="p-8 rounded-[32px] bg-bg-base dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm space-y-6">
+                            <div className="flex items-start justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
+                              <div>
+                                <span className="font-extrabold text-text-main tracking-tight text-lg flex items-center gap-2">
+                                  <Mail className="text-brand-primary" size={20} />
+                                  Automated Vesting Email Alerts (09:00 AM AST/IST)
+                                </span>
+                                <p className="text-xs text-text-muted font-bold uppercase tracking-widest mt-0.5">
+                                  Define sender email configurations and schedule triggers
+                                </p>
+                              </div>
+                              <span className="px-3 py-1.5 rounded-full text-[10px] font-extrabold uppercase border bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+                                Active at 9:00 AM
+                              </span>
+                            </div>
+
+                            <p className="text-xs text-text-muted leading-relaxed">
+                              When employees exceed cliff timelines and reach options vesting dates, the system automatically dispatches email notification summaries to their registered emails. Backed up by server checking sweeps.
+                            </p>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                              {/* Left column: Define From email ID */}
+                              <div className="p-6 rounded-2xl border border-slate-100 dark:border-slate-800 bg-bg-surface dark:bg-slate-950 space-y-4">
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-extrabold text-brand-primary uppercase tracking-[0.2em] block">
+                                    Set Automated From Email Address
+                                  </label>
+                                  <p className="text-xs text-text-muted leading-relaxed">
+                                    Define the official company "from" email id representing your automation triggers.
+                                  </p>
+                                </div>
+                                <div className="space-y-2">
+                                  <input
+                                    type="email"
+                                    value={companySettings.senderEmailId || "hr@teachmint.com"}
+                                    onChange={async (e) => {
+                                      const emailVal = e.target.value.trim();
+                                      await updateCompanySettings({ senderEmailId: emailVal }, user.email);
+                                    }}
+                                    placeholder="hr@teachmint.com"
+                                    className="w-full px-4 py-3 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-800 bg-bg-base dark:bg-slate-900 text-text-main outline-none focus:ring-4 focus:ring-brand-primary/5 transition-all"
+                                  />
+                                  <p className="text-[10px] text-slate-400 font-medium">
+                                    ✓ Standard fallback email when OAuth token is absent: <strong>{companySettings.senderEmailId || "hr@teachmint.com"}</strong>
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Right column: Status and Sweeper Test Actions */}
+                              <div className="p-6 rounded-2xl border border-slate-100 dark:border-slate-800 bg-bg-surface dark:bg-slate-950 flex flex-col justify-between">
+                                <div className="space-y-2">
+                                  <span className="text-[10px] font-extrabold text-text-muted uppercase tracking-[0.2em] block">
+                                    Cron Engine Status & Diagnostics
+                                  </span>
+                                  <div className="space-y-1.5 text-xs">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-semibold text-text-muted">Scheduler Loop:</span>
+                                      <span className="font-mono bg-indigo-50 dark:bg-indigo-950 text-brand-primary px-2 py-0.5 rounded text-[10px] font-bold">INTERVAL ACTIVE (60S)</span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-semibold text-text-muted">Notification Time:</span>
+                                      <span className="text-text-main font-bold">Daily at 09:00 AM IST</span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-semibold text-text-muted">Target Recipients:</span>
+                                      <span className="text-text-main font-bold">Vested Employee Milestones</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="pt-6">
+                                  <button
+                                    type="button"
+                                    onClick={async (e) => {
+                                      const btn = e.currentTarget;
+                                      btn.disabled = true;
+                                      const prevText = btn.innerText;
+                                      btn.innerText = "Running Sweeper Process...";
+                                      try {
+                                        const res = await fetch("/api/trigger-vesting-emails", {
+                                          method: "POST"
+                                        });
+                                        if (res.ok) {
+                                          setBackupSuccess("Vesting check sweep triggered! All employees verified and any unnotified vested milestones are notified.");
+                                          btn.innerText = "✓ Sweep Complete!";
+                                        } else {
+                                          throw new Error("Trigger endpoint error");
+                                        }
+                                      } catch (err) {
+                                        setBackupError("Sweeper manual run failed to contact server API.");
+                                        btn.innerText = "Error";
+                                      }
+                                      setTimeout(() => {
+                                        btn.disabled = false;
+                                        btn.innerText = prevText;
+                                      }, 3000);
+                                    }}
+                                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all"
+                                  >
+                                    Execute Vesting Sweeper Right Now
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {settingsSubTab === "emailTemplates" && (
+                        <div className="space-y-8 animate-fadeIn">
+                          <div className="p-8 rounded-[32px] bg-bg-base dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm space-y-6">
+                            <div className="flex items-start justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
+                              <div>
+                                <span className="font-extrabold text-text-main tracking-tight text-lg flex items-center gap-2">
+                                  <PenTool className="text-brand-primary" size={20} />
+                                  Automated Trigger Email Templates Editor
+                                </span>
+                                <p className="text-xs text-text-muted font-bold uppercase tracking-widest mt-0.5">
+                                  Draft custom HTML email content and subjects for system triggers
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Notifications selection radio grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 pt-2">
+                              {[
+                                {
+                                  id: "welcome",
+                                  title: "Welcome Invitation",
+                                  desc: "Dispatched upon employee credentials initialization.",
+                                  icon: Mail
+                                },
+                                {
+                                  id: "esign_reminder",
+                                  title: "E-Signature Reminder",
+                                  desc: "Manual or bulk alert for outstanding grant signatures.",
+                                  icon: AlertCircle
+                                },
+                                {
+                                  id: "vesting",
+                                  title: "Vesting Alerts (9 AM)",
+                                  desc: "Sent automatically on option vesting dates.",
+                                  icon: CheckCircle2
+                                },
+                                {
+                                  id: "admin",
+                                  title: "Admin Onboarding",
+                                  desc: "Triggered on creation of a new administrator.",
+                                  icon: Settings
+                                }
+                              ].map((item) => {
+                                const isSel = draftTemplateType === item.id;
+                                return (
+                                  <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() => setDraftTemplateType(item.id as any)}
+                                    className={`p-5 rounded-2xl border text-left flex flex-col justify-between transition-all duration-200 h-full ${
+                                      isSel
+                                        ? "bg-brand-primary/5 border-brand-primary ring-2 ring-brand-primary/20"
+                                        : "bg-bg-surface dark:bg-slate-950 border-slate-200/60 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between mb-3 w-full">
+                                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                                        isSel ? "bg-brand-primary text-white" : "bg-slate-100 dark:bg-slate-800 text-text-muted"
+                                      }`}>
+                                        <item.icon size={16} />
+                                      </div>
+                                      {isSel && (
+                                        <span className="w-2 h-2 rounded-full bg-brand-primary animate-pulse" />
+                                      )}
+                                    </div>
+                                    <div>
+                                      <h4 className={`text-xs font-black uppercase tracking-wider ${
+                                        isSel ? "text-brand-primary" : "text-text-main"
+                                      }`}>
+                                        {item.title}
+                                      </h4>
+                                      <p className="text-[10px] text-text-muted mt-1 leading-relaxed">
+                                        {item.desc}
+                                      </p>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* Split template editor / real-time live preview */}
+                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-4">
+                              
+                              {/* Left Columns - Inputs */}
+                              <div className="lg:col-span-7 space-y-6">
+                                <div className="space-y-2">
+                                  <label className="text-[11px] font-extrabold text-brand-primary uppercase tracking-[0.1em] block">
+                                    Email Subject Template
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={draftSubject}
+                                    onChange={(e) => setDraftSubject(e.target.value)}
+                                    placeholder="Enter subject template line..."
+                                    className="w-full px-5 py-4 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-800 bg-bg-surface dark:bg-slate-950 text-text-main outline-none focus:ring-4 focus:ring-brand-primary/5 transition-all"
+                                  />
+                                </div>
+
+                                <div className="space-y-2">
+                                  <div className="flex justify-between items-center">
+                                    <label className="text-[11px] font-extrabold text-brand-primary uppercase tracking-[0.1em] block">
+                                      HTML Body Document
+                                    </label>
+                                    <span className="text-[10px] text-text-muted font-bold">Supports standard inline CSS & placeholders</span>
+                                  </div>
+                                  <textarea
+                                    value={draftBody}
+                                    onChange={(e) => setDraftBody(e.target.value)}
+                                    rows={18}
+                                    className="w-full px-5 py-4 font-mono text-xs leading-relaxed rounded-xl border border-slate-200 dark:border-slate-800 bg-bg-surface dark:bg-slate-950 text-text-main outline-none focus:ring-4 focus:ring-brand-primary/5 transition-all resize-y"
+                                    placeholder="Enter HTML email representation coding..."
+                                  />
+                                </div>
+
+                                {/* Placeholder Variables Quick Tags Injection Board */}
+                                <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-150 dark:border-slate-800 space-y-3">
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-text-muted block">
+                                    Supported Placeholder Tags (Click to Insert)
+                                  </span>
+                                  <div className="flex flex-wrap gap-2">
+                                    {[
+                                      { tag: "{{STAKEHOLDER_NAME}}", desc: "Full Name of Employee" },
+                                      { tag: "{{EMPLOYEE_EMAIL}}", desc: "Corporate email identifier" },
+                                      { tag: "{{PASSWORD}}", desc: "Credentials secret value" },
+                                      { tag: "{{DESIGNATION}}", desc: "Corporate Job role designation" },
+                                      { tag: "{{DEPARTMENT}}", desc: "Assigned department category" },
+                                      { tag: "{{PORTAL_URL}}", desc: "Secure Direct login interface locator" },
+                                      { tag: "{{GRANT_ID}}", desc: "ESOP option contract record number" },
+                                      { tag: "{{SHARES_QUANTITY}}", desc: "Sum-total options allocated" },
+                                      { tag: "{{STRIKE_PRICE}}", desc: "Standard exercise conversion INR rate" },
+                                      { tag: "{{VESTED_SHARES}}", desc: "Options vesting in active sweep" },
+                                      { tag: "{{VESTED_DATE}}", desc: "Calendar date milestone of vesting" },
+                                      { tag: "{{CUMULATIVE_VESTED_SHARES}}", desc: "Total sum vested options" },
+                                      { tag: "{{ADMIN_NAME}}", desc: "Admin user name representation" },
+                                      { tag: "{{ADMIN_EMAIL}}", desc: "Admin target registered login email" }
+                                    ].map((v) => {
+                                      const isApplicable = 
+                                        draftTemplateType === "welcome"
+                                          ? ["{{STAKEHOLDER_NAME}}", "{{EMPLOYEE_EMAIL}}", "{{PASSWORD}}", "{{DESIGNATION}}", "{{DEPARTMENT}}", "{{PORTAL_URL}}"].includes(v.tag)
+                                          : draftTemplateType === "esign_reminder"
+                                          ? ["{{STAKEHOLDER_NAME}}", "{{GRANT_ID}}", "{{SHARES_QUANTITY}}", "{{STRIKE_PRICE}}", "{{PORTAL_URL}}"].includes(v.tag)
+                                          : draftTemplateType === "vesting"
+                                          ? ["{{STAKEHOLDER_NAME}}", "{{VESTED_SHARES}}", "{{VESTED_DATE}}", "{{CUMULATIVE_VESTED_SHARES}}", "{{PORTAL_URL}}"].includes(v.tag)
+                                          : ["{{ADMIN_NAME}}", "{{ADMIN_EMAIL}}", "{{PASSWORD}}", "{{PORTAL_URL}}"].includes(v.tag);
+                                      return (
+                                        <button
+                                          key={v.tag}
+                                          type="button"
+                                          disabled={!isApplicable}
+                                          onClick={() => {
+                                            setDraftBody(prev => prev + " " + v.tag);
+                                          }}
+                                          title={v.desc}
+                                          className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold font-mono border transition-all ${
+                                            isApplicable
+                                              ? "bg-brand-primary/10 hover:bg-brand-primary/25 border-brand-primary/20 text-brand-primary cursor-pointer hover:scale-[1.03]"
+                                              : "bg-slate-100/50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60"
+                                          }`}
+                                        >
+                                          {v.tag}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Right Columns - Live Sandbox Rendering Render */}
+                              <div className="lg:col-span-5 flex flex-col space-y-4">
+                                <span className="text-[11px] font-extrabold text-brand-primary uppercase tracking-[0.1em] block">
+                                  Live Real-Time Email Render Sandbox
+                                </span>
+                                
+                                <div className="flex-1 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden min-h-[400px]">
+                                  {/* Subject bar mockup */}
+                                  <div className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-5 py-4 space-y-1.5">
+                                    <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                                      <span className="font-bold text-slate-600 dark:text-slate-400">Subject:</span>
+                                      <span className="font-bold text-slate-800 dark:text-slate-200 font-sans">
+                                        {draftSubject ? draftSubject.replaceAll("{{STAKEHOLDER_NAME}}", "Jane Doe").replaceAll("{{VESTED_DATE}}", "2026-06-05") : "(No subject defined)"}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                                      <span className="font-bold">From:</span>
+                                      <span className="font-mono bg-slate-200/50 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[9px] text-slate-600 dark:text-slate-300">
+                                        {companySettings.senderEmailId || "hr@teachmint.com"}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Frame sandbox representation */}
+                                  <div className="flex-1 p-4 bg-slate-150 dark:bg-slate-900/40 overflow-y-auto max-h-[500px]">
+                                    {draftBody ? (
+                                      <div 
+                                        className="bg-white rounded-xl shadow-inner max-w-full overflow-x-hidden"
+                                        dangerouslySetInnerHTML={{
+                                          __html: (() => {
+                                            const mockVars: Record<string, string> = {
+                                              "{{STAKEHOLDER_NAME}}": "Jane Doe",
+                                              "{{EMPLOYEE_EMAIL}}": "jane.doe@teachmint.com",
+                                              "{{PASSWORD}}": "tm_secure789",
+                                              "{{DESIGNATION}}": "Lead Software Engineer",
+                                              "{{DEPARTMENT}}": "Engineering",
+                                              "{{PORTAL_URL}}": window.location.origin + "/?role=employee&email=jane.doe%40teachmint.com",
+                                              "{{GRANT_ID}}": "GR-TM-2025-103",
+                                              "{{SHARES_QUANTITY}}": "25,000",
+                                              "{{STRIKE_PRICE}}": "10",
+                                              "{{VESTED_SHARES}}": "1,250",
+                                              "{{VESTED_DATE}}": "2026-06-05",
+                                              "{{CUMULATIVE_VESTED_SHARES}}": "3,750",
+                                              "{{ADMIN_NAME}}": "John Smith",
+                                              "{{ADMIN_EMAIL}}": "john.smith@teachmint.com"
+                                            };
+                                            let result = draftBody;
+                                            for (const [key, value] of Object.entries(mockVars)) {
+                                              result = result.replace(new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), value);
+                                            }
+                                            return result;
+                                          })()
+                                        }}
+                                      />
+                                    ) : (
+                                      <div className="h-full flex flex-col items-center justify-center p-8 text-center text-text-muted space-y-2">
+                                        <Mail size={32} className="opacity-40 animate-pulse" />
+                                        <p className="text-xs font-bold uppercase tracking-wider">Empty Template Content</p>
+                                        <p className="text-[10px]">Please insert HTML above to instantly inspect interactive desktop/mobile preview.</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Alert/Status banner */}
+                            {draftSaveMessage && (
+                              <div className={`p-4 rounded-xl text-xs font-extrabold flex items-center gap-2 animate-fadeIn ${
+                                draftSaveStatus === "saved"
+                                  ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                                  : "bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400"
+                              }`}>
+                                <AlertCircle size={16} />
+                                {draftSaveMessage}
+                              </div>
+                            )}
+
+                            {/* Action footer */}
+                            <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-800 text-xs">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (confirm("Restore this template type back to TeachVest default layout system values?")) {
+                                    if (draftTemplateType === "welcome") {
+                                      setDraftSubject("TeachVest Invitation: Access Your Employee ESOP Dashboard");
+                                      setDraftBody(DEFAULT_SETTINGS.emailTemplateWelcomeBody);
+                                    } else if (draftTemplateType === "esign_reminder") {
+                                      setDraftSubject("Urgent Action Required: Teachmint ESOP Grant E-Signature Request");
+                                      setDraftBody(DEFAULT_SETTINGS.emailTemplateReminderBody);
+                                    } else if (draftTemplateType === "vesting") {
+                                      setDraftSubject("Teachmint options vested today! ({{VESTED_DATE}})");
+                                      setDraftBody(DEFAULT_SETTINGS.emailTemplateVestingBody);
+                                    } else if (draftTemplateType === "admin") {
+                                      setDraftSubject("TeachVest Invitation: Administrator Access Granted");
+                                      setDraftBody(DEFAULT_SETTINGS.emailTemplateAdminBody);
+                                    }
+                                  }
+                                }}
+                                className="px-5 py-3 rounded-xl font-black uppercase text-rose-600 hover:bg-rose-600/5 transition-all"
+                              >
+                                Restore System Defaults
+                              </button>
+
+                              <button
+                                type="button"
+                                disabled={draftSaveStatus === "saving"}
+                                onClick={handleSaveEmailTemplate}
+                                className="px-8 py-3.5 bg-brand-primary text-white rounded-xl font-black uppercase tracking-wider shadow-xl shadow-brand-primary/20 hover:scale-[1.02] active:scale-[0.98] outline-none transition-all flex items-center gap-2"
+                              >
+                                {draftSaveStatus === "saving" ? "Preserving..." : "Save Custom Template"}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       )}

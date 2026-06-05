@@ -611,7 +611,7 @@ export const EmployeeDashboard: React.FC<Props> = ({ user: initialUser, onLogout
     }
 
     const doc = new jsPDF();
-    const primaryColor = "#0052FF";
+    const primaryColor = "#0A52F7";
     
     // Header
     doc.setFillColor( primaryColor );
@@ -665,10 +665,10 @@ export const EmployeeDashboard: React.FC<Props> = ({ user: initialUser, onLogout
       {/* Navbar */}
       <header className="bg-bg-surface border-b border-slate-100 dark:border-slate-800 sticky top-0 z-50 shadow-[0_4px_12px_rgba(0,82,255,0.03)] transition-colors">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-4 group">
+          <div className="flex items-center gap-3 group">
             <motion.div 
-              whileHover={{ rotate: -5, scale: 1.05 }}
-              className="w-12 h-12 rounded-2xl bg-white overflow-hidden shadow-xl"
+              whileHover={{ rotate: 5, scale: 1.05 }}
+              className="w-12 h-12 rounded-2xl bg-white overflow-hidden shadow-xl flex items-center justify-center flex-shrink-0"
             >
                <img 
                  src={logoUrl} 
@@ -676,14 +676,17 @@ export const EmployeeDashboard: React.FC<Props> = ({ user: initialUser, onLogout
                  className="w-full h-full object-contain p-1"
                />
             </motion.div>
-            <div className="flex flex-col min-w-0">
+            <motion.div
+              whileHover={{ rotate: -2, scale: 1.03 }}
+              className="h-12 px-4 rounded-2xl bg-white flex items-center justify-center shadow-xl overflow-hidden flex-shrink-0 border border-slate-100 dark:border-slate-200/10"
+            >
                <img 
                  src={otherLogoUrl} 
                  alt="TeachVest" 
-                 className="h-8 object-contain"
+                 className="h-6 object-contain"
                  referrerPolicy="no-referrer"
                />
-            </div>
+            </motion.div>
           </div>
 
           <div className="flex items-center gap-6">
@@ -914,7 +917,7 @@ export const EmployeeDashboard: React.FC<Props> = ({ user: initialUser, onLogout
                 {/* Header Information Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="p-6 bg-bg-surface shadow-sm rounded-3xl border border-slate-100 dark:border-slate-800">
-                    <span className="text-[10px] uppercase font-black tracking-widest text-[#0052FF] block mb-2">Joining Date / ESOP Start</span>
+                    <span className="text-[10px] uppercase font-black tracking-widest text-brand-primary block mb-2">Joining Date / ESOP Start</span>
                     <span className="text-2xl font-extrabold text-text-main font-mono">{fmtDate(user.joinDate)}</span>
                   </div>
                   <div className="p-6 bg-bg-surface shadow-sm rounded-3xl border border-slate-100 dark:border-slate-800">
@@ -1045,38 +1048,38 @@ export const EmployeeDashboard: React.FC<Props> = ({ user: initialUser, onLogout
 
                       <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
                         {/* Dynamic Letter Frame */}
-                        <div className="lg:col-span-3 bg-white dark:bg-slate-950 p-8 rounded-3xl shadow-inner border border-slate-100 dark:border-slate-800 text-slate-800 dark:text-slate-200 font-sans leading-relaxed text-xs space-y-6 max-h-[360px] overflow-y-auto">
+                        <div className="lg:col-span-3 bg-white dark:bg-slate-950 p-8 rounded-3xl shadow-inner border border-slate-100 dark:border-slate-800 text-text-main font-sans leading-relaxed text-xs space-y-6 max-h-[360px] overflow-y-auto">
                           {!companySettings.grantLetterBodyHeader?.includes("LETTER OF GRANT") && (
                             <>
                               <div className="text-center font-sans space-y-1 border-b pb-4 border-slate-200 dark:border-slate-800">
-                                <h3 className="text-xs font-black tracking-widest uppercase text-slate-900 dark:text-slate-100">{companySettings.grantLetterCompanyName || "Teachmint Technologies Private Limited"}</h3>
-                                <p className="text-[8px] font-bold text-slate-500 uppercase">{companySettings.grantLetterCompanyAddress || "Regd Office: Bangalore, Landmark Tower, Sector 3A, India"}</p>
+                                <h3 className="text-xs font-black tracking-widest uppercase text-text-main">{companySettings.grantLetterCompanyName || "Teachmint Technologies Private Limited"}</h3>
+                                <p className="text-[8px] font-bold text-text-muted uppercase">{companySettings.grantLetterCompanyAddress || "Regd Office: Bangalore, Landmark Tower, Sector 3A, India"}</p>
                               </div>
 
-                              <div className="flex justify-between font-sans text-[8px] text-slate-500 font-bold uppercase">
+                              <div className="flex justify-between font-sans text-[8px] text-text-muted font-bold uppercase">
                                 <span>Ref: TM/ESOP/{activeGrant.id}</span>
                                 <span>Date: {fmtDate(activeGrant.grantDate)}</span>
                               </div>
 
-                              <div className="font-sans text-[10px] font-extrabold text-slate-900 dark:text-slate-100">
+                              <div className="font-sans text-[10px] font-extrabold text-text-main">
                                 <p>To,</p>
                                 <p className="capitalize mt-1">{user.name}</p>
-                                <p className="text-slate-500">{user.designation} — {user.department}</p>
-                                <p className="text-slate-400">Employee Unique Code: {user.id}</p>
+                                <p className="text-text-muted">{user.designation} — {user.department}</p>
+                                <p className="text-text-muted opacity-80">Employee Unique Code: {user.id}</p>
                               </div>
 
-                              <div className="text-center font-sans font-black uppercase text-[10px] tracking-wider text-slate-900 dark:text-slate-100 underline decoration-indigo-500 decoration-2">
+                              <div className="text-center font-sans font-black uppercase text-[10px] tracking-wider text-text-main underline decoration-indigo-500 decoration-2">
                                 {companySettings.grantLetterSubject || "Subject: Option offering under Employees’ Stock Option Plan 2020 (ESOP 2020)"}
                               </div>
 
                               <p>
-                                Dear <strong className="font-sans font-extrabold capitalize">{user.name}</strong>,
+                                Dear <strong className="font-sans font-extrabold capitalize text-text-main">{user.name}</strong>,
                               </p>
                             </>
                           )}
 
                           <div 
-                            className="text-slate-700 dark:text-slate-300 leading-relaxed space-y-2 whitespace-pre-wrap text-xs font-sans"
+                            className="text-text-main opacity-90 leading-relaxed space-y-2 whitespace-pre-wrap text-xs font-sans"
                             dangerouslySetInnerHTML={{
                               __html: replaceLetterPlaceholders(
                                 companySettings.grantLetterBodyHeader || "On behalf of Teachmint Technologies Private Limited, we are pleased to offer you options under the Teachmint ESOP Plan 2020. Below are the core parameters of your grant:",
@@ -1098,22 +1101,22 @@ export const EmployeeDashboard: React.FC<Props> = ({ user: initialUser, onLogout
                             }}
                           />
 
-                          <div className="grid grid-cols-2 gap-4 font-sans bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-800 text-[9px] font-extrabold uppercase text-slate-500">
+                          <div className="grid grid-cols-2 gap-4 font-sans bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-800 text-[9px] font-extrabold uppercase text-text-muted">
                             <div>
-                              <p className="text-slate-400 text-[8px] font-black text-[7px]">Grant Unique ID</p>
-                              <p className="text-slate-900 dark:text-slate-100 text-[11px] font-black">{activeGrant.id}</p>
+                              <p className="text-text-muted text-[8px] font-black opacity-80">Grant Unique ID</p>
+                              <p className="text-text-main text-[11px] font-black">{activeGrant.id}</p>
                             </div>
                             <div>
-                              <p className="text-slate-400 text-[8px] font-black text-[7px]">Offered Options Count</p>
-                              <p className="text-slate-900 dark:text-slate-100 text-[11px] font-black">{fmt(activeGrant.totalShares)} units</p>
+                              <p className="text-text-muted text-[8px] font-black opacity-80">Offered Options Count</p>
+                              <p className="text-text-main text-[11px] font-black">{fmt(activeGrant.totalShares)} units</p>
                             </div>
                             <div>
-                              <p className="text-slate-400 text-[8px] font-black text-[7px]">Strike Option Price</p>
+                              <p className="text-text-muted text-[8px] font-black opacity-80">Strike Option Price</p>
                               <p className="text-emerald-600 text-[11px] font-black">₹{activeGrant.strikePrice || 10}</p>
                             </div>
                             <div>
-                              <p className="text-slate-400 text-[8px] font-black text-[7px]">Vesting Option Period</p>
-                              <p className="text-slate-900 dark:text-slate-100 text-[11px] font-black">{activeGrant.vestingSchedule}</p>
+                              <p className="text-text-muted text-[8px] font-black opacity-80">Vesting Option Period</p>
+                              <p className="text-text-main text-[11px] font-black">{activeGrant.vestingSchedule}</p>
                             </div>
                           </div>
 
@@ -1144,29 +1147,29 @@ export const EmployeeDashboard: React.FC<Props> = ({ user: initialUser, onLogout
                           <div className="grid grid-cols-2 gap-8 pt-6 border-t border-dashed border-slate-200 dark:border-slate-800 font-sans text-[9px]">
                             {/* Signatory */}
                             <div className="space-y-1 font-bold">
-                              <p className="text-slate-400 font-black uppercase text-[7px]">Authorized Signatory</p>
+                              <p className="text-text-muted font-black uppercase text-[7px]">Authorized Signatory</p>
                               <p className="text-emerald-500 font-extrabold">✓ Digitally Signed</p>
-                              <p className="text-slate-400 font-mono">Date: {fmtDate(activeGrant.signatorySignedDate || activeGrant.grantDate)}</p>
-                              <div className="pt-1 text-slate-800 dark:text-slate-200 font-black">
+                              <p className="text-text-muted font-mono opacity-80">Date: {fmtDate(activeGrant.signatorySignedDate || activeGrant.grantDate)}</p>
+                              <div className="pt-1 text-text-main font-black">
                                 <p>{companySettings.signatoryName || "Sanju T"}</p>
-                                <p className="text-[7px] text-slate-500 font-medium">{companySettings.signatoryDesignation || "Director"}</p>
+                                <p className="text-[7px] text-text-muted font-medium">{companySettings.signatoryDesignation || "Director"}</p>
                               </div>
                             </div>
 
                             {/* Employee */}
                             <div className="space-y-1 font-bold">
-                              <p className="text-slate-400 font-black uppercase text-[7px]">Stakeholder E-Sign</p>
+                              <p className="text-text-muted font-black uppercase text-[7px]">Stakeholder E-Sign</p>
                               {activeGrant.employeeEsignDate ? (
                                 <div className="space-y-0.5">
                                   <p className="text-emerald-500 font-extrabold">✓ Digitally Accepted</p>
-                                  <p className="text-slate-400 font-mono">Date: {fmtDate(activeGrant.employeeEsignDate)}</p>
+                                  <p className="text-text-muted font-mono opacity-80">Date: {fmtDate(activeGrant.employeeEsignDate)}</p>
                                 </div>
                               ) : (
                                 <p className="text-rose-500 font-black animate-pulse">✗ Awaiting Acceptance</p>
                               )}
-                              <div className="pt-1 text-slate-800 dark:text-slate-200 font-black">
+                              <div className="pt-1 text-text-main font-black">
                                 <p>{user.name}</p>
-                                <p className="text-[7px] text-slate-500 font-medium">{user.designation}</p>
+                                <p className="text-[7px] text-text-muted font-medium">{user.designation}</p>
                               </div>
                             </div>
                           </div>
@@ -1538,7 +1541,7 @@ export const EmployeeDashboard: React.FC<Props> = ({ user: initialUser, onLogout
                     if (fields.length === 0) return null;
                     return (
                       <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-800 animate-fadeIn">
-                        <h4 className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-widest mb-4">
+                        <h4 className="text-xs font-extrabold text-text-main uppercase tracking-widest mb-4">
                           Additional Information (Custom Profiles)
                         </h4>
                         <div className="grid grid-cols-2 gap-4">
@@ -1547,10 +1550,10 @@ export const EmployeeDashboard: React.FC<Props> = ({ user: initialUser, onLogout
                               key={i}
                               className="p-4 rounded-2xl bg-bg-base border border-slate-100 dark:border-slate-800"
                             >
-                              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-0.5">
+                              <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider block mb-0.5">
                                 {f.key}
                               </span>
-                              <span className="text-sm font-extrabold text-slate-900 dark:text-white">
+                              <span className="text-sm font-extrabold text-text-main">
                                 {f.value || "—"}
                               </span>
                             </div>
