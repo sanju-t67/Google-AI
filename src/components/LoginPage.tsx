@@ -15,7 +15,7 @@ const logoUrl = "https://lh3.googleusercontent.com/d/1Lj5Gm67qUfIYizVoGVdPsXwC6y
 const otherLogoUrl = "https://lh3.googleusercontent.com/d/1FeJm6poQPXmoYKLJd94gGnqdJmkwhiHL";
 
 interface LoginPageProps {
-  onLogin: (user: Employee | Admin, role: "employee" | "admin") => void;
+  onLogin: (user: Employee | Admin, role: "employee" | "admin", sessionToken?: string) => void;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
@@ -32,42 +32,30 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     setLoading(true);
     
     try {
-      if (tab === "admin") {
-        const admin = await getAdminByEmail(identifier);
-        
-        if (admin && (admin.password === password || !admin.password)) {
-          // Sign in anonymously to satisfy Firestore rules for demo
-          try {
-            await signInAnonymously(auth);
-          } catch (e) {
-            console.warn("Failed to sign in anonymously (expected if disabled on console):", e);
-          }
-          onLogin(admin, "admin");
-        } else {
-          setError("Invalid admin credentials.");
-        }
-      } else {
-        const emp = await getEmployeeByEmail(identifier);
-        
-        if (emp && (emp.password === password || !emp.password)) {
-          if (emp.disabled) {
-            setError("Your access has been disabled by the administrator.");
-            setLoading(false);
-            return;
-          }
-          // Sign in anonymously to satisfy Firestore rules for demo
-          try {
-            await signInAnonymously(auth);
-          } catch (e) {
-            console.warn("Failed to sign in anonymously (expected if disabled on console):", e);
-          }
-          onLogin(emp, "employee");
-        } else {
-          setError("Invalid email/mobile or password.");
-        }
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: identifier, password, role: tab })
+      });
+      
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({ error: "Invalid credentials or login failed." }));
+        setError(errData.error || "Invalid login credentials.");
+        return;
       }
-    } catch (err) {
-      setError("Login failed. Please try again.");
+      
+      const data = await response.json();
+      
+      // Sign in anonymously to satisfy Firestore rules for demo
+      try {
+        await signInAnonymously(auth);
+      } catch (err) {
+        console.warn("Failed to sign in anonymously:", err);
+      }
+      onLogin(data.user, data.role, data.sessionToken);
+    } catch (err: any) {
+      console.error(err);
+      setError("Login failed. Check server connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -84,24 +72,22 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
         throw new Error("No email returned from Google");
       }
 
-      // Check Firestore FIRST
-      const admin = await getAdminByEmail(email);
-      if (admin) {
-        onLogin(admin, "admin");
+      const idToken = await result.user.getIdToken();
+      
+      const response = await fetch("/api/auth/google-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken, role: tab })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({ error: "Google sign-in validation failed" }));
+        setError(errData.error || "Your Google account is not registered. Please contact HR.");
         return;
       }
 
-      const emp = await getEmployeeByEmail(email);
-      if (emp) {
-        if (emp.disabled) {
-          setError("Your access has been disabled by the administrator.");
-          return;
-        }
-        onLogin(emp, "employee");
-        return;
-      }
-
-      setError(`No account found for ${email}. Please contact HR.`);
+      const data = await response.json();
+      onLogin(data.user, data.role, data.sessionToken);
     } catch (err: any) {
       console.error(err);
       setError(err.message || "Failed to sign in with Google.");

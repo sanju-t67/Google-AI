@@ -7,6 +7,36 @@ import firebaseConfig from "./firebase-applet-config.json";
 import { MOCK_ADMINS, MOCK_EMPLOYEES } from "./src/constants";
 import { Employee, Admin, AuditLog } from "./src/types";
 import { generateVestingSchedule, replaceEmailPlaceholders } from "./src/lib/utils";
+import crypto from "crypto";
+
+function hashPassword(password: string): string {
+  if (!password) return "";
+  return crypto.createHash("sha256").update(password).digest("hex");
+}
+
+function isSHA256(str: string): boolean {
+  return /^[a-f0-9]{64}$/i.test(str);
+}
+
+function ensureHashed(password: string): string {
+  if (!password) return "";
+  if (isSHA256(password)) return password;
+  return hashPassword(password);
+}
+
+function verifyPassword(inputPassword: string, storedPasswordHashOrPlain: string): { matches: boolean; upgradeNeeded: boolean } {
+  if (!inputPassword || !storedPasswordHashOrPlain) {
+    return { matches: false, upgradeNeeded: false };
+  }
+  const hashedInput = hashPassword(inputPassword);
+  if (storedPasswordHashOrPlain === hashedInput) {
+    return { matches: true, upgradeNeeded: false };
+  }
+  if (storedPasswordHashOrPlain === inputPassword) {
+    return { matches: true, upgradeNeeded: true };
+  }
+  return { matches: false, upgradeNeeded: false };
+}
 
 // Initialize Firebase SDK
 const firebaseApp = initializeApp(firebaseConfig);
@@ -208,33 +238,7 @@ async function seedDatabaseIfEmpty() {
 
     // Sync/Seed admins
     console.log("Synchronizing latest administrators with Cloud Firestore...");
-    const seedAdmins = [
-      ...JSON.parse(JSON.stringify(MOCK_ADMINS)),
-      {
-        email: "ashutosh@teachmint.com",
-        password: "ashu123", // sync with the latest specified password
-        name: "Ashutosh Unhale",
-        role: "admin"
-      },
-      {
-         email: "hr@teachmint.com",
-         password: "hr123",
-         name: "HR",
-         role: "admin"
-      },
-      {
-        email: "sanju.ts@teachmint.com",
-        password: "admin123",
-        name: "Sanju T",
-        role: "admin"
-      },
-      {
-        email: "preeta@teachmint.com",
-        password: "admin123",
-        name: "Preeta Saxena",
-        role: "admin"
-      }
-    ];
+    const seedAdmins = MOCK_ADMINS;
     // Deduplicate by email
     const uniqueAdminsMap = new Map<string, any>();
     for (const admin of seedAdmins) {
@@ -242,7 +246,11 @@ async function seedDatabaseIfEmpty() {
     }
     for (const admin of uniqueAdminsMap.values()) {
       const adminId = admin.email.toLowerCase().replace(/[^a-z0-9]/g, "_");
-      await setDoc(doc(db, "admins", adminId), admin);
+      const secureAdmin = {
+        ...admin,
+        password: ensureHashed(admin.password)
+      };
+      await setDoc(doc(db, "admins", adminId), secureAdmin);
     }
 
     // Sync/Seed employees
@@ -265,8 +273,17 @@ async function seedDatabaseIfEmpty() {
       const empSnap = await getDoc(empRef);
       if (!empSnap.exists()) {
         console.log(`Syncing/Seeding Cloud database for employee ${emp.id} (${emp.name})...`);
-        await setDoc(empRef, emp);
+        const secureEmp = {
+          ...emp,
+          password: ensureHashed(emp.password)
+        };
+        await setDoc(empRef, secureEmp);
       } else {
+        const existingData = empSnap.data() as Employee;
+        if (existingData && existingData.password && !isSHA256(existingData.password)) {
+          console.log(`Migrating/Hashing password in Firestore for existing employee ${existingData.name}...`);
+          await updateDoc(empRef, { password: ensureHashed(existingData.password) });
+        }
         console.log(`Employee ${emp.id} (${emp.name}) already exists. Preserving custom fields, vesting details, and documents.`);
       }
     }
@@ -279,16 +296,16 @@ async function seedDatabaseIfEmpty() {
         {
           id: "LOG-000001",
           timestamp: new Date(Date.now() - 3600000 * 5).toISOString(),
-          adminEmail: "ashutosh@teachmint.com",
+          adminEmail: "admin@example.com",
           action: "System Initialisation",
           details: "TeachVest Platform Cap-Table initialized with 10,000,000 Pool Shares and current Fair Market Value (FMV) of INR 210.00."
         },
         {
           id: "LOG-000002",
           timestamp: new Date(Date.now() - 3600000).toISOString(),
-          adminEmail: "ashutosh@teachmint.com",
+          adminEmail: "admin@example.com",
           action: "Employee Seed",
-          details: "Imported core team members: Ashutosh Unhale, Neeraj Kumar, Vinay Bansal & Chinnappa C M."
+          details: "Imported core team members: Ashutosh U, Neeraj K, Vinay B & Chinnappa C."
         }
       ];
       for (const log of initialLogs) {
@@ -464,7 +481,7 @@ async function startServer() {
   async function recordLog(req: express.Request, action: string, details: string) {
     try {
       const u = (req as any).user;
-      const adminEmail = u?.email || (req.headers["x-admin-email"] as string) || "ashutosh@teachmint.com";
+      const adminEmail = u?.email || (req.headers["x-admin-email"] as string) || "admin@example.com";
       const logId = `LOG-${Math.floor(Math.random() * 900000) + 100000}`;
       const newLog = {
         id: logId,
@@ -533,19 +550,26 @@ async function startServer() {
       }
       const emailLower = email.toLowerCase();
       
-      if (emailLower === "sanju.ts@teachmint.com") {
-        return res.status(403).json({ error: "Super Admin (sanju.ts@teachmint.com) is restricted to log in only using Google Sign In." });
+      if (emailLower === "sanju.ts@teachmint.com" || emailLower === "sanju@sanju-t.com") {
+        return res.status(403).json({ error: "Super Admin is restricted to log in only using Google Sign In." });
       }
       
       if (role === "admin") {
         const adminId = emailLower.replace(/[^a-z0-9]/g, "_");
-        const adminSnap = await getDoc(doc(db, "admins", adminId));
+        const adminDocRef = doc(db, "admins", adminId);
+        const adminSnap = await getDoc(adminDocRef);
         if (!adminSnap.exists()) {
           return res.status(401).json({ error: "Invalid admin credentials." });
         }
         const admin = adminSnap.data();
-        if (admin.password !== password) {
+        const { matches, upgradeNeeded } = verifyPassword(password, admin.password);
+        if (!matches) {
           return res.status(401).json({ error: "Invalid admin credentials." });
+        }
+
+        if (upgradeNeeded) {
+          await updateDoc(adminDocRef, { password: ensureHashed(password) });
+          admin.password = ensureHashed(password);
         }
         
         // Generate secure random token
@@ -560,14 +584,26 @@ async function startServer() {
         return res.json({ sessionToken: token, user: adminSanitized, role: "admin" });
       } else {
         const employeesSnap = await getDocs(collection(db, "employees"));
-        const employees = employeesSnap.docs.map(d => d.data() as Employee);
-        const emp = employees.find(e => e.email.toLowerCase() === emailLower || e.mobile === email);
-        if (!emp) {
+        const foundDoc = employeesSnap.docs.find(d => {
+          const data = d.data();
+          return data.email.toLowerCase() === emailLower || data.mobile === email;
+        });
+        if (!foundDoc) {
           return res.status(401).json({ error: "Invalid email/mobile or password." });
         }
-        if (emp.password !== password) {
+        const emp = foundDoc.data() as Employee;
+        const empDocRef = foundDoc.ref;
+
+        const { matches, upgradeNeeded } = verifyPassword(password, emp.password);
+        if (!matches) {
           return res.status(401).json({ error: "Invalid email/mobile or password." });
         }
+
+        if (upgradeNeeded) {
+          await updateDoc(empDocRef, { password: ensureHashed(password) });
+          emp.password = ensureHashed(password);
+        }
+
         if (emp.disabled) {
           return res.status(403).json({ error: "Your access has been disabled by the administrator." });
         }
@@ -590,7 +626,7 @@ async function startServer() {
 
   app.post("/api/auth/google-login", async (req, res) => {
     try {
-      const { idToken } = req.body;
+      const { idToken, role } = req.body;
       if (!idToken) {
         return res.status(400).json({ error: "ID token is required" });
       }
@@ -602,38 +638,64 @@ async function startServer() {
       
       const emailLower = tokenPayload.email.toLowerCase();
       
-      // First check admins
-      const adminId = emailLower.replace(/[^a-z0-9]/g, "_");
-      const adminSnap = await getDoc(doc(db, "admins", adminId));
-      if (adminSnap.exists()) {
-        const admin = adminSnap.data();
-        const token = "g_" + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
-        serverSessionStore.set(token, {
-          email: emailLower,
-          role: "admin",
-          expires: Date.now() + 24 * 3600 * 1000
-        });
-        
-        const { password: _, ...adminSanitized } = admin;
-        return res.json({ sessionToken: token, user: adminSanitized, role: "admin" });
-      }
-      
-      // Checking employees
-      const employeesSnap = await getDocs(collection(db, "employees"));
-      const employees = employeesSnap.docs.map(d => d.data() as Employee);
-      const emp = employees.find(e => e.email.toLowerCase() === emailLower);
-      if (emp) {
-        if (emp.disabled) {
-          return res.status(403).json({ error: "Your access has been disabled by the administrator." });
+      const tryAdmin = async () => {
+        const adminId = emailLower.replace(/[^a-z0-9]/g, "_");
+        const adminSnap = await getDoc(doc(db, "admins", adminId));
+        if (adminSnap.exists()) {
+          const admin = adminSnap.data();
+          const token = "g_" + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+          serverSessionStore.set(token, {
+            email: emailLower,
+            role: "admin",
+            expires: Date.now() + 24 * 3600 * 1000
+          });
+          
+          const { password: _, ...adminSanitized } = admin;
+          return { sessionToken: token, user: adminSanitized, role: "admin" };
         }
-        const token = "g_" + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
-        serverSessionStore.set(token, {
-          email: emailLower,
-          role: "employee",
-          expires: Date.now() + 24 * 3600 * 1000
-        });
-        const { password: _, ...empSanitized } = emp;
-        return res.json({ sessionToken: token, user: empSanitized, role: "employee" });
+        return null;
+      };
+
+      const tryEmployee = async () => {
+        const employeesSnap = await getDocs(collection(db, "employees"));
+        const employees = employeesSnap.docs.map(d => d.data() as Employee);
+        const emp = employees.find(e => e.email.toLowerCase() === emailLower);
+        if (emp) {
+          if (emp.disabled) {
+            throw new Error("Your access has been disabled by the administrator.");
+          }
+          const token = "g_" + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+          serverSessionStore.set(token, {
+            email: emailLower,
+            role: "employee",
+            expires: Date.now() + 24 * 3600 * 1000
+          });
+          const { password: _, ...empSanitized } = emp;
+          return { sessionToken: token, user: empSanitized, role: "employee" };
+        }
+        return null;
+      };
+
+      if (role === "employee") {
+        try {
+          const empResult = await tryEmployee();
+          if (empResult) return res.json(empResult);
+        } catch (err: any) {
+          return res.status(403).json({ error: err.message });
+        }
+        
+        const adminResult = await tryAdmin();
+        if (adminResult) return res.json(adminResult);
+      } else {
+        const adminResult = await tryAdmin();
+        if (adminResult) return res.json(adminResult);
+        
+        try {
+          const empResult = await tryEmployee();
+          if (empResult) return res.json(empResult);
+        } catch (err: any) {
+          return res.status(403).json({ error: err.message });
+        }
       }
       
       return res.status(404).json({ error: `No registered account found for ${emailLower}. Please contact your administrator.` });
@@ -948,10 +1010,18 @@ async function startServer() {
       
       if (snap.exists()) {
         const merged = { ...snap.data(), ...newEmp };
+        if (merged.password) {
+          merged.password = ensureHashed(merged.password);
+        }
         await setDoc(docRef, merged);
         await recordLog(req, "Update Employee", `Updated core profile info for employee ${newEmp.name} (${newEmp.email})`);
       } else {
-        await setDoc(docRef, newEmp);
+        const plainPassword = newEmp.password || "login123";
+        const secureEmp = {
+          ...newEmp,
+          password: ensureHashed(plainPassword)
+        };
+        await setDoc(docRef, secureEmp);
         // Create an invitation email!
         const settingsSnap = await getDoc(doc(db, "settings", "company"));
         const settingsData = settingsSnap.exists() ? settingsSnap.data() : { ...DEFAULT_SETTINGS };
@@ -961,7 +1031,7 @@ async function startServer() {
         const placeholders = {
           NAME: newEmp.name,
           EMAIL: newEmp.email,
-          PASSWORD: newEmp.password || "login123",
+          PASSWORD: plainPassword,
           DESIGNATION: newEmp.designation,
           DEPARTMENT: newEmp.department,
           PORTAL_URL: `http://localhost:3000/?role=employee&email=${encodeURIComponent(newEmp.email)}`
@@ -979,7 +1049,7 @@ async function startServer() {
           body: emailBody,
           sentAt: new Date().toISOString(),
           role: "employee",
-          password: newEmp.password || "login123"
+          password: plainPassword
         };
         await setDoc(doc(db, "sentEmails", emailId), inviteEmail);
         await recordLog(req, "Create Employee", `Created employee profile for ${newEmp.name} (${newEmp.email}) representing ${newEmp.grants?.[0]?.totalShares?.toLocaleString() || 0} initial options.`);
@@ -1013,13 +1083,17 @@ async function startServer() {
           }
           updated = { 
             ...original, 
-            password: req.body.password 
+            password: ensureHashed(req.body.password) 
           };
           await setDoc(docRef, updated);
           await recordLog(req, "Employee Password Change", `Employee ${original.name} (${original.email}) successfully updated their personal portal password.`);
         } else if (user.role === "admin") {
           // Admins have full access
-          updated = { ...original, ...req.body };
+          const updatePayload = { ...req.body };
+          if (updatePayload.password) {
+            updatePayload.password = ensureHashed(updatePayload.password);
+          }
+          updated = { ...original, ...updatePayload };
           await setDoc(docRef, updated);
           
           // Formulate a descriptive details string based on changes
@@ -1140,10 +1214,19 @@ async function startServer() {
       const docRef = doc(db, "admins", adminId);
       const snap = await getDoc(docRef);
       if (snap.exists()) {
-        await setDoc(docRef, { ...snap.data(), ...newAdmin });
+        const merged = { ...snap.data(), ...newAdmin };
+        if (merged.password) {
+          merged.password = ensureHashed(merged.password);
+        }
+        await setDoc(docRef, merged);
         await recordLog(req, "Update Administrator", `Updated permission layout or info for administrator ${newAdmin.name} (${newAdmin.email})`);
       } else {
-        await setDoc(docRef, newAdmin);
+        const plainPassword = newAdmin.password || "admin123";
+        const secureAdmin = {
+          ...newAdmin,
+          password: ensureHashed(plainPassword)
+        };
+        await setDoc(docRef, secureAdmin);
         // Create an invitation email!
         const settingsSnap = await getDoc(doc(db, "settings", "company"));
         const settingsData = settingsSnap.exists() ? settingsSnap.data() : { ...DEFAULT_SETTINGS };
@@ -1152,7 +1235,7 @@ async function startServer() {
 
         const placeholders = {
           EMAIL: newAdmin.email,
-          PASSWORD: newAdmin.password || "admin123",
+          PASSWORD: plainPassword,
           PORTAL_URL: `http://localhost:3000/?role=admin&email=${encodeURIComponent(newAdmin.email)}`
         };
 
@@ -1168,7 +1251,7 @@ async function startServer() {
           body: emailBody,
           sentAt: new Date().toISOString(),
           role: "admin",
-          password: newAdmin.password || "admin123"
+          password: plainPassword
         };
         await setDoc(doc(db, "sentEmails", emailId), inviteEmail);
         await recordLog(req, "Create Administrator", `Provisioned system administrator privileges for ${newAdmin.name} (${newAdmin.email})`);

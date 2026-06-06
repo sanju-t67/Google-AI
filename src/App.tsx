@@ -58,23 +58,13 @@ function AppContent() {
         console.error("Failed to seed database on startup:", e);
       }
 
-      // Pre-load session from local storage for instant access with automatic stale-user detection
+      // Pre-load session from local storage for instant access
       try {
         const cached = localStorage.getItem("user_session");
         if (cached) {
           const parsed = JSON.parse(cached);
           if (parsed && parsed.user && parsed.role) {
-            const email = parsed.user.email?.toLowerCase();
-            const isValid = 
-              MOCK_ADMINS.some(a => a.email.toLowerCase() === email) ||
-              MOCK_EMPLOYEES.some(e => e.email.toLowerCase() === email);
-              
-            if (!isValid) {
-              console.log("Cached session is stale or obsolete. Purging...");
-              localStorage.removeItem("user_session");
-            } else {
-              setSession(parsed);
-            }
+            setSession(parsed);
           }
         }
       } catch (err) {
@@ -85,29 +75,55 @@ function AppContent() {
         if (firebaseUser?.email) {
           const email = firebaseUser.email;
           const { getAdminByEmail, getEmployeeByEmail } = await import("./services/dataService");
+          const idToken = await firebaseUser.getIdToken().catch(() => undefined);
           
+          let preferredRole: "admin" | "employee" | null = null;
           try {
-            const adminObj = await getAdminByEmail(email);
-            if (adminObj) {
-              const sess = { user: adminObj, role: "admin" as const };
-              setSession(sess);
-              localStorage.setItem("user_session", JSON.stringify(sess));
-              return;
+            const cached = localStorage.getItem("user_session");
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              if (parsed && parsed.role) {
+                preferredRole = parsed.role;
+              }
             }
-          } catch (e) {
-            console.error("Failed to query DB for admin session restore:", e);
-          }
+          } catch (e) {}
 
-          try {
-            const empObj = await getEmployeeByEmail(email);
-            if (empObj) {
-              const sess = { user: empObj, role: "employee" as const };
-              setSession(sess);
-              localStorage.setItem("user_session", JSON.stringify(sess));
-              return;
+          const checkAdmin = async () => {
+            try {
+              const adminObj = await getAdminByEmail(email);
+              if (adminObj) {
+                const sess = { user: adminObj, role: "admin" as const, sessionToken: idToken };
+                setSession(sess);
+                localStorage.setItem("user_session", JSON.stringify(sess));
+                return true;
+              }
+            } catch (e) {
+              console.error("Failed to query DB for admin session restore:", e);
             }
-          } catch (e) {
-            console.error("Failed to query DB for employee session restore:", e);
+            return false;
+          };
+
+          const checkEmployee = async () => {
+            try {
+              const empObj = await getEmployeeByEmail(email);
+              if (empObj) {
+                const sess = { user: empObj, role: "employee" as const, sessionToken: idToken };
+                setSession(sess);
+                localStorage.setItem("user_session", JSON.stringify(sess));
+                return true;
+              }
+            } catch (e) {
+              console.error("Failed to query DB for employee session restore:", e);
+            }
+            return false;
+          };
+
+          if (preferredRole === "employee") {
+            const ok = await checkEmployee();
+            if (!ok) await checkAdmin();
+          } else {
+            const ok = await checkAdmin();
+            if (!ok) await checkEmployee();
           }
         }
       });
@@ -120,8 +136,8 @@ function AppContent() {
     };
   }, []);
 
-  const handleLogin = (user: Employee | Admin, role: "employee" | "admin") => {
-    const sess = { user, role };
+  const handleLogin = (user: Employee | Admin, role: "employee" | "admin", sessionToken?: string) => {
+    const sess = { user, role, sessionToken };
     setSession(sess);
     localStorage.setItem("user_session", JSON.stringify(sess));
     if (role === "admin") {

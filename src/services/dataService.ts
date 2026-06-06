@@ -83,6 +83,25 @@ const DEFAULT_ADMINS: Admin[] = [
   ...MOCK_ADMINS
 ];
 
+export function getAuthHeaders(adminEmail?: string): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const cachedSess = localStorage.getItem("user_session");
+  if (cachedSess) {
+    try {
+      const parsedSess = JSON.parse(cachedSess);
+      if (parsedSess && parsedSess.sessionToken) {
+        headers['Authorization'] = `Bearer ${parsedSess.sessionToken}`;
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+  if (adminEmail) {
+    headers['X-Admin-Email'] = adminEmail;
+  }
+  return headers;
+}
+
 export function getLocalDb(): DatabaseSchema {
   const raw = localStorage.getItem("ts_local_db");
   if (raw) {
@@ -142,7 +161,7 @@ export const subscribeToCompanySettings = (callback: (settings: CompanySettings)
   let active = true;
   const poll = async () => {
     try {
-      const res = await fetch('/api/settings');
+      const res = await fetch('/api/settings', { headers: getAuthHeaders() });
       if (active) {
         const data = await checkResponseJson(res);
         callback(data as CompanySettings);
@@ -164,10 +183,7 @@ export const subscribeToCompanySettings = (callback: (settings: CompanySettings)
 
 export const updateCompanySettings = async (settings: Partial<CompanySettings>, adminEmail?: string) => {
   try {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (adminEmail) {
-      headers['X-Admin-Email'] = adminEmail;
-    }
+    const headers = getAuthHeaders(adminEmail);
     const res = await fetch('/api/settings', {
       method: 'POST',
       headers,
@@ -213,10 +229,7 @@ export const uploadChunkedPolicy = async (
     const end = Math.min(start + CHUNK_SIZE, fileDataUrl.length);
     const chunkContent = fileDataUrl.substring(start, end);
 
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (adminEmail) {
-      headers['X-Admin-Email'] = adminEmail;
-    }
+    const headers = getAuthHeaders(adminEmail);
 
     const res = await fetch('/api/settings/policy-chunk', {
       method: 'POST',
@@ -253,7 +266,7 @@ export const subscribeToEmployees = (callback: (employees: Employee[]) => void) 
   let active = true;
   const poll = async () => {
     try {
-      const res = await fetch('/api/employees');
+      const res = await fetch('/api/employees', { headers: getAuthHeaders() });
       if (active) {
         const data = await checkResponseJson(res);
         callback(data as Employee[]);
@@ -277,7 +290,7 @@ export const subscribeToEmployee = (employeeId: string, callback: (employee: Emp
   let active = true;
   const poll = async () => {
     try {
-      const res = await fetch(`/api/employees/${employeeId}`);
+      const res = await fetch(`/api/employees/${employeeId}`, { headers: getAuthHeaders() });
       if (active) {
         if (res.status === 404) {
           callback(null);
@@ -304,10 +317,7 @@ export const subscribeToEmployee = (employeeId: string, callback: (employee: Emp
 
 export const updateEmployeeData = async (employeeId: string, data: Partial<Employee>, adminEmail?: string) => {
   try {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (adminEmail) {
-      headers['X-Admin-Email'] = adminEmail;
-    }
+    const headers = getAuthHeaders(adminEmail);
     const res = await fetch(`/api/employees/${employeeId}`, {
       method: 'PUT',
       headers,
@@ -330,10 +340,7 @@ export const updateEmployeeData = async (employeeId: string, data: Partial<Emplo
 
 export const deleteEmployee = async (employeeId: string, adminEmail?: string) => {
   try {
-    const headers: Record<string, string> = {};
-    if (adminEmail) {
-      headers['X-Admin-Email'] = adminEmail;
-    }
+    const headers = getAuthHeaders(adminEmail);
     const res = await fetch(`/api/employees/${employeeId}`, {
       method: 'DELETE',
       headers
@@ -352,10 +359,7 @@ export const deleteEmployee = async (employeeId: string, adminEmail?: string) =>
 
 export const createEmployee = async (employee: Employee, adminEmail?: string) => {
   try {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (adminEmail) {
-      headers['X-Admin-Email'] = adminEmail;
-    }
+    const headers = getAuthHeaders(adminEmail);
     const res = await fetch('/api/employees', {
       method: 'POST',
       headers,
@@ -400,10 +404,7 @@ export const createEmployee = async (employee: Employee, adminEmail?: string) =>
 
 export const createAdmin = async (admin: Admin, adminId?: string, adminEmail?: string) => {
   try {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (adminEmail) {
-      headers['X-Admin-Email'] = adminEmail;
-    }
+    const headers = getAuthHeaders(adminEmail);
     const res = await fetch('/api/admins', {
       method: 'POST',
       headers,
@@ -446,10 +447,7 @@ export const createAdmin = async (admin: Admin, adminId?: string, adminEmail?: s
 
 export const deleteAdmin = async (email: string, adminEmail?: string) => {
   try {
-    const headers: Record<string, string> = {};
-    if (adminEmail) {
-      headers['X-Admin-Email'] = adminEmail;
-    }
+    const headers = getAuthHeaders(adminEmail);
     const res = await fetch(`/api/admins/${encodeURIComponent(email)}`, {
       method: 'DELETE',
       headers
@@ -468,7 +466,7 @@ export const deleteAdmin = async (email: string, adminEmail?: string) => {
 
 export const getEmployeeByEmail = async (email: string): Promise<Employee | null> => {
   try {
-    const res = await fetch(`/api/employees/by-email?email=${encodeURIComponent(email)}`);
+    const res = await fetch(`/api/employees/by-email?email=${encodeURIComponent(email)}`, { headers: getAuthHeaders() });
     const data = await checkResponseJson(res);
     return data as Employee;
   } catch (error) {
@@ -482,7 +480,7 @@ export const getEmployeeByEmail = async (email: string): Promise<Employee | null
 
 export const getAdminByEmail = async (email: string): Promise<Admin | null> => {
   try {
-    const res = await fetch(`/api/admins/by-email?email=${encodeURIComponent(email)}`);
+    const res = await fetch(`/api/admins/by-email?email=${encodeURIComponent(email)}`, { headers: getAuthHeaders() });
     const data = await checkResponseJson(res);
     return data as Admin;
   } catch (error) {
@@ -498,7 +496,7 @@ export const subscribeToAdmins = (callback: (admins: Admin[]) => void) => {
   let active = true;
   const poll = async () => {
     try {
-      const res = await fetch('/api/admins');
+      const res = await fetch('/api/admins', { headers: getAuthHeaders() });
       if (active) {
         const data = await checkResponseJson(res);
         callback(data as Admin[]);
@@ -522,7 +520,7 @@ export const subscribeToEmails = (callback: (emails: SentEmail[]) => void) => {
   let active = true;
   const poll = async () => {
     try {
-      const res = await fetch('/api/emails');
+      const res = await fetch('/api/emails', { headers: getAuthHeaders() });
       if (active) {
         const data = await checkResponseJson(res);
         callback(data as SentEmail[]);
@@ -551,7 +549,7 @@ export const sendSystemEmail = async (email: Omit<SentEmail, 'id' | 'sentAt'>) =
   try {
     const res = await fetch('/api/emails', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(newEmail)
     });
     if (res.ok) return;
@@ -568,10 +566,7 @@ export const subscribeToAuditLogs = (callback: (logs: AuditLog[]) => void, admin
   let active = true;
   const poll = async () => {
     try {
-      const headers: Record<string, string> = {};
-      if (adminEmail) {
-        headers['X-Admin-Email'] = adminEmail;
-      }
+      const headers = getAuthHeaders(adminEmail);
       const res = await fetch('/api/audit-logs', { headers });
       if (active) {
         const data = await checkResponseJson(res);
@@ -594,10 +589,7 @@ export const subscribeToAuditLogs = (callback: (logs: AuditLog[]) => void, admin
 
 export const createAuditLog = async (action: string, details: string, adminEmail?: string) => {
   try {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (adminEmail) {
-      headers['X-Admin-Email'] = adminEmail;
-    }
+    const headers = getAuthHeaders(adminEmail);
     const res = await fetch('/api/audit-logs', {
       method: 'POST',
       headers,
