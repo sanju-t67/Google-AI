@@ -410,3 +410,13 @@ export function replaceLetterPlaceholders(
     .replace(/\{\{VESTING_SCHEDULE_TABLE\}\}/g, vestingScheduleTableHtml);
 }
 
+export function replaceEmailPlaceholders(template: string, placeholders: Record<string, string>): string {
+  if (!template) return "";
+  let result = template;
+  for (const [key, val] of Object.entries(placeholders)) {
+    const regex = new RegExp(`{{\\s*${key}\\s*}}`, "gi");
+    result = result.replace(regex, val);
+  }
+  return result;
+}
+

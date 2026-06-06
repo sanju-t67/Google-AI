@@ -27,6 +27,14 @@ export interface CompanySettings {
   backupDriveFolderId?: string;
   backupDriveFolderName?: string;
   lastBackupDate?: string;
+  employeeInviteSubject?: string;
+  employeeInviteBody?: string;
+  adminInviteSubject?: string;
+  adminInviteBody?: string;
+  vestingAlertSubject?: string;
+  vestingAlertBody?: string;
+  eSignReminderSubject?: string;
+  eSignReminderBody?: string;
 }
 
 export interface SentEmail {

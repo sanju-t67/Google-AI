@@ -1,32 +1,12 @@
 rules_version = '2';
 service cloud.firestore {
-  match /databases/{database}/documents {
-    match /employees/{employeeId} {
-      allow read, write: if true;
-    }
-
-    match /admins/{adminId} {
-      allow read, write: if true;
-    }
-
-    match /settings/{settingId} {
-      allow read, write: if true;
-    }
-
-    match /policy_chunks/{chunkId} {
-      allow read, write: if true;
-    }
-
-    match /sentEmails/{emailId} {
-      allow read, write: if true;
-    }
-
-    match /auditLogs/{logId} {
-      allow read, write: if true;
-    }
-
-    match /test/{testId} {
-      allow read, write: if true;
-    }
-  }
+ match /databases/{database}/documents {
+   // Zero-Trust Security Configuration:
+   // Directly deny all direct client-side read and write queries.
+   // All interaction with database collections must securely go through
+   // the verified, role-checked Node.js backend server API endpoints only.
+   match /{document=**} {
+     allow read, write: if false;
+   }
+ }
 }

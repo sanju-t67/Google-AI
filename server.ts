@@ -6,11 +6,63 @@ import { getFirestore, doc, getDoc, getDocs, setDoc, deleteDoc, updateDoc, colle
 import firebaseConfig from "./firebase-applet-config.json";
 import { MOCK_ADMINS, MOCK_EMPLOYEES } from "./src/constants";
 import { Employee, Admin, AuditLog } from "./src/types";
-import { generateVestingSchedule } from "./src/lib/utils";
+import { generateVestingSchedule, replaceEmailPlaceholders } from "./src/lib/utils";
 
 // Initialize Firebase SDK
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp, (firebaseConfig as any).firestoreDatabaseId);
+
+const serverSessionStore = new Map<string, { email: string, role: string, expires: number }>();
+
+function decodeFirebaseIdToken(token: string): { email?: string; email_verified?: boolean; iss?: string; aud?: string; exp?: number } | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payloadBase64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const b = Buffer.from(payloadBase64, 'base64');
+    const payload = JSON.parse(b.toString('utf8'));
+    return payload;
+  } catch (e) {
+    return null;
+  }
+}
+
+function parseAndValidateToken(token: string): { email: string } | null {
+  try {
+    const payload = decodeFirebaseIdToken(token);
+    if (!payload) return null;
+    
+    // Check issuer and audience
+    const projectId = firebaseConfig.projectId;
+    if (payload.iss !== `https://securetoken.google.com/${projectId}`) {
+      console.warn("Invalid token issuer:", payload.iss);
+      return null;
+    }
+    if (payload.aud !== projectId) {
+      console.warn("Invalid token audience:", payload.aud);
+      return null;
+    }
+    
+    // Check expiry
+    const nowSecs = Math.floor(Date.now() / 1000);
+    if (payload.exp && payload.exp < nowSecs) {
+      console.warn("Token expired");
+      return null;
+    }
+    
+    if (!payload.email) {
+      return null;
+    }
+    
+    return { email: payload.email.toLowerCase() };
+  } catch (e) {
+    return null;
+  }
+}
+
+function fillTemplate(template: string, placeholders: Record<string, string>): string {
+  return replaceEmailPlaceholders(template, placeholders);
+}
 
 interface SentEmail {
   id: string;
@@ -45,6 +97,94 @@ const DEFAULT_SETTINGS = {
   backupDriveFolderId: "",
   backupDriveFolderName: "",
   lastBackupDate: "",
+  employeeInviteSubject: "Welcome to TeachVest: Access Your Employee ESOP Dashboard",
+  employeeInviteBody: `<div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #f8fafc; border-radius: 12px; max-width: 600px; border: 1px solid #e2e8f0;">
+  <h2 style="color: #0052ff; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">Welcome to TeachVest, {{NAME}}!</h2>
+  <p style="font-size: 14px; line-height: 1.5; color: #475569;">An official employee profile has been created for you on the TeachVest platform by your company administrator.</p>
+  
+  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+    <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Your Login Credentials</p>
+    <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Login Username:</strong> {{EMAIL}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Temporary Password:</strong> {{PASSWORD}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Employee Designation:</strong> {{DESIGNATION}} ({{DEPARTMENT}})</p>
+  </div>
+
+  <p style="font-size: 14px; line-height: 1.5; color: #475569;">To securely inspect, monitor and exercise your vesting ESOP shares, please log in to your employee dashboard using the button below:</p>
+  
+  <div style="text-align: center; margin: 25px 0;">
+    <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Enter TeachVest Portal</a>
+  </div>
+
+  <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; line-height: 1.4;">
+    Security Policy: This is an automated security mail dispatch. If you did not expect these credentials or have security questions, please contact your TeachVest Cap-Table HR administrator immediately.
+  </p>
+</div>`,
+  adminInviteSubject: "TeachVest Invitation: Administrator Access Granted",
+  adminInviteBody: `<div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #f8fafc; border-radius: 12px; max-width: 600px; border: 1px solid #e2e8f0;">
+  <h2 style="color: #0052ff; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">TeachVest Administrator Access Activated</h2>
+  <p style="font-size: 14px; line-height: 1.5; color: #475569;">You have been granted official Administrator privileges on the TeachVest Capital Cap-Table and ESOP Management System.</p>
+  
+  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+    <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Administrator Credentials</p>
+    <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Login Username:</strong> {{EMAIL}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Temporary Password:</strong> {{PASSWORD}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Assigned Access Role:</strong> Platform Administrator / Board Observer</p>
+  </div>
+
+  <p style="font-size: 14px; line-height: 1.5; color: #475569;">Use corporate administrator portal access to define stock metrics, edit employee grants, attach critical legal documents and supervise active vestings.</p>
+  
+  <div style="text-align: center; margin: 25px 0;">
+    <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Enter Admin Dashboard</a>
+  </div>
+
+  <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; line-height: 1.4;">
+    Security Alert: Keep these credentials stored securely. Do not share your login details with any unverified accounts. All access sessions are logged for audit compliance.
+  </p>
+</div>`,
+  vestingAlertSubject: "Teachmint options vested today! ({{VESTING_DATE}})",
+  vestingAlertBody: `<div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #eef2ff; border-radius: 12px; max-width: 600px; border: 1px solid #e0e7ff;">
+  <h3 style="color: #6366f1; margin-bottom: 12px; font-weight: 800; font-family: sans-serif;">Automated Option Vesting Notification</h3>
+  <p style="font-size: 14px; line-height: 1.6; color: #475569; font-family: sans-serif;">
+    Hi <strong>{{NAME}}</strong>,
+  </p>
+  <p style="font-size: 14px; line-height: 1.6; color: #475569; font-family: sans-serif;">
+    We are happy to inform you that <strong>{{VEST_SHARES}}</strong> options got vested on <strong>{{VESTING_DATE}}</strong> for the scheme <strong>Teachmint Technologies Private Limited Employees’ Stock Option Plan 2020</strong>.
+  </p>
+  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin: 18px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+    <p style="margin: 0; font-size: 13px; color: #334155; font-family: sans-serif;"><strong>Vesting Shares:</strong> {{VEST_SHARES}} Options</p>
+    <p style="margin: 4px 0 0 0; font-size: 13px; color: #334155; font-family: sans-serif;"><strong>Accumulated Vested Balance:</strong> {{CUMULATIVE_VESTED}} Options</p>
+  </div>
+  <p style="font-size: 14px; line-height: 1.6; color: #475569; font-family: sans-serif;">
+    To view your full vesting schedule, monitor milestones, or execute standard equity actions, please access your TeachVest employee profile:
+  </p>
+  <div style="text-align: center; margin: 20px 0;">
+    <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0052ff; color: white; padding: 12px 24px; border-radius: 10px; font-weight: bold; text-decoration: none; font-size: 13px; font-family: sans-serif;">Login to TeachVest Dashboard</a>
+  </div>
+  <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; font-family: sans-serif;">
+    Regards,<br/>
+    <strong>Teachmint HR Operations</strong><br/>
+    Contact: {{SENDER_EMAIL}}
+  </p>
+</div>`,
+  eSignReminderSubject: "Urgent Action Required: Teachmint ESOP Grant E-Signature Request",
+  eSignReminderBody: `<div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #fffbeb; border-radius: 12px; max-width: 600px; border: 1px solid #fef3c7;">
+  <h2 style="color: #b45309; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">Digital Signature Outstanding</h2>
+  <p style="font-size: 14px; line-height: 1.5; color: #475569;">Hello {{NAME}}, your ESOP Options Allocation Offer <strong>{{GRANT_ID}}</strong> representing <strong>{{SHARES_QUANTITY}} Options</strong> is awaiting your e-signature execution.</p>
+  
+  <div style="background: white; border: 1px solid #fef3c7; border-radius: 12px; padding: 18px; margin: 20px 0;">
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Grant Reference:</strong> {{GRANT_ID}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Strike Option Price:</strong> INR {{STRIKE_PRICE}}</p>
+    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Sign-off Status:</strong> Pending Stakeholder Signature</p>
+  </div>
+
+  <p style="font-size: 14px; line-height: 1.5; color: #475569;">Please log in securely to complete signing and execute your digital ESOP Grant Certificate contract:</p>
+  
+  <div style="text-align: center; margin: 25px 0;">
+    <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0a52f7; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(10, 82, 247, 0.2);">Review & E-Sign Offer Letter</a>
+  </div>
+</div>`,
   lastUpdated: new Date().toISOString()
 };
 
@@ -60,6 +200,10 @@ async function seedDatabaseIfEmpty() {
     if (needsMigration) {
       console.log("Seeding/Migrating global company settings to the new Google Doc template...");
       await setDoc(settingsRef, DEFAULT_SETTINGS);
+    } else if (docData && (!docData.employeeInviteSubject || !docData.vestingAlertSubject)) {
+      console.log("Migrating email template defaults to company settings...");
+      const merged = { ...DEFAULT_SETTINGS, ...docData };
+      await setDoc(settingsRef, merged);
     }
 
     // Sync/Seed admins
@@ -319,7 +463,8 @@ async function startServer() {
 
   async function recordLog(req: express.Request, action: string, details: string) {
     try {
-      const adminEmail = (req.headers["x-admin-email"] as string) || "ashutosh@teachmint.com";
+      const u = (req as any).user;
+      const adminEmail = u?.email || (req.headers["x-admin-email"] as string) || "ashutosh@teachmint.com";
       const logId = `LOG-${Math.floor(Math.random() * 900000) + 100000}`;
       const newLog = {
         id: logId,
@@ -334,8 +479,171 @@ async function startServer() {
     }
   }
 
+  async function authenticateMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+    const authHeader = req.headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Authentication required." });
+    }
+    const token = authHeader.substring(7);
+    
+    const sess = serverSessionStore.get(token);
+    if (!sess || sess.expires < Date.now()) {
+      // Try to parse as Google ID token
+      const payload = parseAndValidateToken(token);
+      if (payload) {
+        const emailLower = payload.email.toLowerCase();
+        // Check if admin or employee
+        const adminId = emailLower.replace(/[^a-z0-9]/g, "_");
+        const adminSnap = await getDoc(doc(db, "admins", adminId));
+        if (adminSnap.exists()) {
+          (req as any).user = { email: emailLower, role: "admin" };
+          return next();
+        }
+        
+        const employeesSnap = await getDocs(collection(db, "employees"));
+        const employees = employeesSnap.docs.map(d => d.data() as Employee);
+        const emp = employees.find(e => e.email.toLowerCase() === emailLower);
+        if (emp && !emp.disabled) {
+          (req as any).user = { email: emailLower, role: "employee" };
+          return next();
+        }
+      }
+      return res.status(401).json({ error: "Session expired or invalid. Please sign in again." });
+    }
+    
+    (req as any).user = { email: sess.email, role: sess.role };
+    next();
+  }
+
+  function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
+    const user = (req as any).user;
+    if (!user || user.role !== "admin") {
+      return res.status(403).json({ error: "Access denied. Administrator privileges required." });
+    }
+    next();
+  }
+
   // API Routes
-  app.post("/api/fetch-google-doc", async (req, res) => {
+  // Open gate auth routes
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { email, password, role } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: "Email and password are required" });
+      }
+      const emailLower = email.toLowerCase();
+      
+      if (emailLower === "sanju.ts@teachmint.com") {
+        return res.status(403).json({ error: "Super Admin (sanju.ts@teachmint.com) is restricted to log in only using Google Sign In." });
+      }
+      
+      if (role === "admin") {
+        const adminId = emailLower.replace(/[^a-z0-9]/g, "_");
+        const adminSnap = await getDoc(doc(db, "admins", adminId));
+        if (!adminSnap.exists()) {
+          return res.status(401).json({ error: "Invalid admin credentials." });
+        }
+        const admin = adminSnap.data();
+        if (admin.password !== password) {
+          return res.status(401).json({ error: "Invalid admin credentials." });
+        }
+        
+        // Generate secure random token
+        const token = "s_" + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+        serverSessionStore.set(token, {
+          email: emailLower,
+          role: "admin",
+          expires: Date.now() + 24 * 3600 * 1000 // 24 hours
+        });
+        
+        const { password: _, ...adminSanitized } = admin;
+        return res.json({ sessionToken: token, user: adminSanitized, role: "admin" });
+      } else {
+        const employeesSnap = await getDocs(collection(db, "employees"));
+        const employees = employeesSnap.docs.map(d => d.data() as Employee);
+        const emp = employees.find(e => e.email.toLowerCase() === emailLower || e.mobile === email);
+        if (!emp) {
+          return res.status(401).json({ error: "Invalid email/mobile or password." });
+        }
+        if (emp.password !== password) {
+          return res.status(401).json({ error: "Invalid email/mobile or password." });
+        }
+        if (emp.disabled) {
+          return res.status(403).json({ error: "Your access has been disabled by the administrator." });
+        }
+        
+        const token = "s_" + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+        serverSessionStore.set(token, {
+          email: emp.email.toLowerCase(),
+          role: "employee",
+          expires: Date.now() + 24 * 3600 * 1000
+        });
+        
+        const { password: _, ...empSanitized } = emp;
+        return res.json({ sessionToken: token, user: empSanitized, role: "employee" });
+      }
+    } catch (err: any) {
+      console.error("Login route error:", err);
+      res.status(500).json({ error: err.message || "Internal server error during login." });
+    }
+  });
+
+  app.post("/api/auth/google-login", async (req, res) => {
+    try {
+      const { idToken } = req.body;
+      if (!idToken) {
+        return res.status(400).json({ error: "ID token is required" });
+      }
+      
+      const tokenPayload = parseAndValidateToken(idToken);
+      if (!tokenPayload) {
+        return res.status(401).json({ error: "Invalid Google authorization token." });
+      }
+      
+      const emailLower = tokenPayload.email.toLowerCase();
+      
+      // First check admins
+      const adminId = emailLower.replace(/[^a-z0-9]/g, "_");
+      const adminSnap = await getDoc(doc(db, "admins", adminId));
+      if (adminSnap.exists()) {
+        const admin = adminSnap.data();
+        const token = "g_" + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+        serverSessionStore.set(token, {
+          email: emailLower,
+          role: "admin",
+          expires: Date.now() + 24 * 3600 * 1000
+        });
+        
+        const { password: _, ...adminSanitized } = admin;
+        return res.json({ sessionToken: token, user: adminSanitized, role: "admin" });
+      }
+      
+      // Checking employees
+      const employeesSnap = await getDocs(collection(db, "employees"));
+      const employees = employeesSnap.docs.map(d => d.data() as Employee);
+      const emp = employees.find(e => e.email.toLowerCase() === emailLower);
+      if (emp) {
+        if (emp.disabled) {
+          return res.status(403).json({ error: "Your access has been disabled by the administrator." });
+        }
+        const token = "g_" + Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+        serverSessionStore.set(token, {
+          email: emailLower,
+          role: "employee",
+          expires: Date.now() + 24 * 3600 * 1000
+        });
+        const { password: _, ...empSanitized } = emp;
+        return res.json({ sessionToken: token, user: empSanitized, role: "employee" });
+      }
+      
+      return res.status(404).json({ error: `No registered account found for ${emailLower}. Please contact your administrator.` });
+    } catch (err: any) {
+      console.error("Google login route error:", err);
+      res.status(500).json({ error: err.message || "Internal server error during Google login." });
+    }
+  });
+
+  app.post("/api/fetch-google-doc", authenticateMiddleware, requireAdmin, async (req, res) => {
     try {
       const { url } = req.body;
       if (!url) {
@@ -363,7 +671,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/trigger-vesting-emails", async (req, res) => {
+  app.post("/api/trigger-vesting-emails", authenticateMiddleware, requireAdmin, async (req, res) => {
     try {
       await checkAndTriggerVestingEmails();
       res.json({ success: true, message: "Manual check check sweep executed successfully!" });
@@ -373,7 +681,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/settings", async (req, res) => {
+  app.get("/api/settings", authenticateMiddleware, async (req, res) => {
     try {
       const docRef = doc(db, "settings", "company");
       const docSnap = await getDoc(docRef);
@@ -391,7 +699,7 @@ async function startServer() {
   });
 
   // Dedicated endpoint to download the chunked corporate policy file
-  app.get("/api/settings/policy-download", async (req, res) => {
+  app.get("/api/settings/policy-download", authenticateMiddleware, async (req, res) => {
     try {
       const docRef = doc(db, "settings", "company");
       const docSnap = await getDoc(docRef);
@@ -430,7 +738,7 @@ async function startServer() {
   });
 
   // Dedicated chunked upload endpoint to bypass the Nginx 1MB body limit & Firestore 1MB doc limit
-  app.post("/api/settings/policy-chunk", async (req, res) => {
+  app.post("/api/settings/policy-chunk", authenticateMiddleware, requireAdmin, async (req, res) => {
     try {
       const { fileName, chunk, index, total } = req.body;
       if (fileName === undefined || chunk === undefined || index === undefined || total === undefined) {
@@ -485,7 +793,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/settings", async (req, res) => {
+  app.post("/api/settings", authenticateMiddleware, requireAdmin, async (req, res) => {
     try {
       const docRef = doc(db, "settings", "company");
       const docSnap = await getDoc(docRef);
@@ -574,26 +882,36 @@ async function startServer() {
     }
   });
 
-  app.get("/api/employees", async (req, res) => {
+  app.get("/api/employees", authenticateMiddleware, requireAdmin, async (req, res) => {
     try {
       const snap = await getDocs(collection(db, "employees"));
-      const employees = snap.docs.map(d => d.data());
+      const employees = snap.docs.map(d => {
+        const emp = d.data() as Employee;
+        const { password: _, ...sanitized } = emp;
+        return sanitized;
+      });
       res.json(employees);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.get("/api/employees/by-email", async (req, res) => {
+  app.get("/api/employees/by-email", authenticateMiddleware, async (req, res) => {
     try {
       const email = (req.query.email as string || '').toLowerCase();
+      const user = (req as any).user;
+      if (user.role === "employee" && user.email !== email) {
+        return res.status(403).json({ error: "Access denied. Employees can only access their own profile." });
+      }
+      
       const snap = await getDocs(collection(db, "employees"));
       const employees = snap.docs.map(d => d.data() as Employee);
       const employee = employees.find(
         emp => emp.email.toLowerCase() === email || emp.mobile === email
       );
       if (employee) {
-        res.json(employee);
+        const { password: _, ...sanitized } = employee;
+        res.json(sanitized);
       } else {
         res.status(404).json({ error: "Employee not found" });
       }
@@ -602,12 +920,18 @@ async function startServer() {
     }
   });
 
-  app.get("/api/employees/:id", async (req, res) => {
+  app.get("/api/employees/:id", authenticateMiddleware, async (req, res) => {
     try {
       const docRef = doc(db, "employees", req.params.id);
       const snap = await getDoc(docRef);
       if (snap.exists()) {
-        res.json(snap.data());
+        const employee = snap.data() as Employee;
+        const user = (req as any).user;
+        if (user.role === "employee" && user.email !== employee.email.toLowerCase()) {
+          return res.status(403).json({ error: "Access denied. Employees can only inspect their own profile." });
+        }
+        const { password: _, ...sanitized } = employee;
+        res.json(sanitized);
       } else {
         res.status(404).json({ error: "Employee not found" });
       }
@@ -616,7 +940,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/employees", async (req, res) => {
+  app.post("/api/employees", authenticateMiddleware, requireAdmin, async (req, res) => {
     try {
       const newEmp = req.body as Employee;
       const docRef = doc(db, "employees", newEmp.id);
@@ -629,37 +953,30 @@ async function startServer() {
       } else {
         await setDoc(docRef, newEmp);
         // Create an invitation email!
+        const settingsSnap = await getDoc(doc(db, "settings", "company"));
+        const settingsData = settingsSnap.exists() ? settingsSnap.data() : { ...DEFAULT_SETTINGS };
+        const tmplSubject = settingsData.employeeInviteSubject || "Welcome to TeachVest: Access Your Employee ESOP Dashboard";
+        const tmplBody = settingsData.employeeInviteBody || "";
+
+        const placeholders = {
+          NAME: newEmp.name,
+          EMAIL: newEmp.email,
+          PASSWORD: newEmp.password || "login123",
+          DESIGNATION: newEmp.designation,
+          DEPARTMENT: newEmp.department,
+          PORTAL_URL: `http://localhost:3000/?role=employee&email=${encodeURIComponent(newEmp.email)}`
+        };
+
+        const emailSubject = fillTemplate(tmplSubject, placeholders);
+        const emailBody = fillTemplate(tmplBody, placeholders);
+
         const emailId = `MSG-${Math.floor(Math.random() * 900000) + 100000}`;
         const inviteEmail: SentEmail = {
           id: emailId,
           recipient: newEmp.email,
           name: newEmp.name,
-          subject: "TeachVest Invitation: Access Your Employee ESOP Dashboard",
-          body: `
-            <div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #f8fafc; border-radius: 12px; max-width: 600px; border: 1px solid #e2e8f0;">
-              <h2 style="color: #0052ff; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">Welcome to TeachVest, ${newEmp.name}!</h2>
-              <p style="font-size: 14px; line-height: 1.5; color: #475569;">An official employee profile has been created for you on the TeachVest platform by your company administrator.</p>
-              
-              <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
-                <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Your Login Credentials</p>
-                <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
-                <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Login Username:</strong> ${newEmp.email}</p>
-                <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Temporary Password:</strong> ${newEmp.password || 'login123'}</p>
-                <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Employee Designation:</strong> ${newEmp.designation} (${newEmp.department})</p>
-                ${newEmp.grantLetterNumber ? `<p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Grant Letter Ref:</strong> ${newEmp.grantLetterNumber}</p>` : ''}
-              </div>
-
-              <p style="font-size: 14px; line-height: 1.5; color: #475569;">To securely inspect, monitor and exercise your vesting ESOP shares, please log in to your employee dashboard using the button below:</p>
-              
-              <div style="text-align: center; margin: 25px 0;">
-                <a href="/?role=employee&email=${encodeURIComponent(newEmp.email)}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Enter TeachVest Portal</a>
-              </div>
-
-              <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; line-height: 1.4;">
-                Security Policy: This is an automated security mail dispatch. If you did not expect these credentials or have security questions, please contact your TeachVest Cap-Table HR administrator immediately.
-              </p>
-            </div>
-          `.trim().replace(/\n\s+/g, '\n'),
+          subject: emailSubject,
+          body: emailBody,
           sentAt: new Date().toISOString(),
           role: "employee",
           password: newEmp.password || "login123"
@@ -673,7 +990,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/employees/:id", async (req, res) => {
+  app.put("/api/employees/:id", authenticateMiddleware, requireAdmin, async (req, res) => {
     try {
       const docRef = doc(db, "employees", req.params.id);
       const snap = await getDoc(docRef);
@@ -710,7 +1027,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/employees/:id", async (req, res) => {
+  app.delete("/api/employees/:id", authenticateMiddleware, requireAdmin, async (req, res) => {
     try {
       const docRef = doc(db, "employees", req.params.id);
       const snap = await getDoc(docRef);
@@ -727,24 +1044,34 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admins", async (req, res) => {
+  app.get("/api/admins", authenticateMiddleware, requireAdmin, async (req, res) => {
     try {
       const snap = await getDocs(collection(db, "admins"));
-      const admins = snap.docs.map(d => d.data());
+      const admins = snap.docs.map(d => {
+        const data = d.data() as Admin;
+        const { password: _, ...sanitized } = data;
+        return sanitized;
+      });
       res.json(admins);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.get("/api/admins/by-email", async (req, res) => {
+  app.get("/api/admins/by-email", authenticateMiddleware, async (req, res) => {
     try {
       const email = (req.query.email as string || '').toLowerCase();
+      const user = (req as any).user;
+      if (user.role === "employee" && user.email !== email) {
+        return res.status(403).json({ error: "Access denied." });
+      }
+      
       const snap = await getDocs(collection(db, "admins"));
       const admins = snap.docs.map(d => d.data() as Admin);
       const admin = admins.find(adm => adm.email.toLowerCase() === email);
       if (admin) {
-        res.json(admin);
+        const { password: _, ...sanitized } = admin;
+        res.json(sanitized);
       } else {
         res.status(404).json({ error: "Admin not found" });
       }
@@ -753,7 +1080,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/emails", async (req, res) => {
+  app.get("/api/emails", authenticateMiddleware, requireAdmin, async (req, res) => {
     try {
       const snap = await getDocs(collection(db, "sentEmails"));
       const emails = snap.docs.map(d => d.data());
@@ -763,7 +1090,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/emails", async (req, res) => {
+  app.post("/api/emails", authenticateMiddleware, requireAdmin, async (req, res) => {
     try {
       const newEmail = req.body as SentEmail;
       if (!newEmail.id) {
@@ -779,7 +1106,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admins", async (req, res) => {
+  app.post("/api/admins", authenticateMiddleware, requireAdmin, async (req, res) => {
     try {
       const newAdmin = req.body as Admin;
       const adminId = newAdmin.email.toLowerCase().replace(/[^a-z0-9]/g, "_");
@@ -791,36 +1118,27 @@ async function startServer() {
       } else {
         await setDoc(docRef, newAdmin);
         // Create an invitation email!
+        const settingsSnap = await getDoc(doc(db, "settings", "company"));
+        const settingsData = settingsSnap.exists() ? settingsSnap.data() : { ...DEFAULT_SETTINGS };
+        const tmplSubject = settingsData.adminInviteSubject || "TeachVest Invitation: Administrator Access Granted";
+        const tmplBody = settingsData.adminInviteBody || "";
+
+        const placeholders = {
+          EMAIL: newAdmin.email,
+          PASSWORD: newAdmin.password || "admin123",
+          PORTAL_URL: `http://localhost:3000/?role=admin&email=${encodeURIComponent(newAdmin.email)}`
+        };
+
+        const emailSubject = fillTemplate(tmplSubject, placeholders);
+        const emailBody = fillTemplate(tmplBody, placeholders);
+
         const emailId = `MSG-${Math.floor(Math.random() * 900000) + 100000}`;
         const inviteEmail: SentEmail = {
           id: emailId,
           recipient: newAdmin.email,
           name: newAdmin.name,
-          subject: "TeachVest Invitation: Administrator Access Granted",
-          body: `
-            <div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #f8fafc; border-radius: 12px; max-width: 600px; border: 1px solid #e2e8f0;">
-              <h2 style="color: #0052ff; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">TeachVest Administrator Access Activated</h2>
-              <p style="font-size: 14px; line-height: 1.5; color: #475569;">You have been granted official Administrator privileges on the TeachVest Capital Cap-Table and ESOP Management System.</p>
-              
-              <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
-                <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Your Administrator Credentials</p>
-                <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
-                <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Login Username:</strong> ${newAdmin.email}</p>
-                <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Temporary Password:</strong> ${newAdmin.password || 'admin123'}</p>
-                <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Assigned Access Role:</strong> Platform Administrator / Board Observer</p>
-              </div>
-
-              <p style="font-size: 14px; line-height: 1.5; color: #475569;">Use corporate administrator portal access to define stock metrics, edit employee grants, attach critical legal documents and supervise active vestings.</p>
-              
-              <div style="text-align: center; margin: 25px 0;">
-                <a href="/?role=admin&email=${encodeURIComponent(newAdmin.email)}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Enter Admin Dashboard</a>
-              </div>
-
-              <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; line-height: 1.4;">
-                Security Alert: Keep these credentials stored securely. Do not share your login details with any unverified accounts. All access sessions are logged for audit compliance.
-              </p>
-            </div>
-          `.trim().replace(/\n\s+/g, '\n'),
+          subject: emailSubject,
+          body: emailBody,
           sentAt: new Date().toISOString(),
           role: "admin",
           password: newAdmin.password || "admin123"
@@ -834,7 +1152,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/admins/:email", async (req, res) => {
+  app.delete("/api/admins/:email", authenticateMiddleware, requireAdmin, async (req, res) => {
     try {
       const email = req.params.email.toLowerCase();
       const adminId = email.replace(/[^a-z0-9]/g, "_");
@@ -853,7 +1171,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/audit-logs", async (req, res) => {
+  app.get("/api/audit-logs", authenticateMiddleware, requireAdmin, async (req, res) => {
     try {
       const snap = await getDocs(collection(db, "auditLogs"));
       const logs = snap.docs.map(d => d.data());
@@ -864,7 +1182,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/audit-logs", async (req, res) => {
+  app.post("/api/audit-logs", authenticateMiddleware, requireAdmin, async (req, res) => {
     try {
       const { action, details } = req.body;
       await recordLog(req, action, details || "");

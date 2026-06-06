@@ -44,6 +44,7 @@ import {
   Send,
   PenTool,
   CheckSquare,
+  Sliders,
   Cloud,
   FolderOpen,
   RefreshCw,
@@ -195,6 +196,15 @@ export const AdminDashboard: React.FC<Props> = ({
   const [defaultEsopPolicyFileUrlInput, setDefaultEsopPolicyFileUrlInput] =
     useState<string>("");
 
+  const [employeeInviteSubjectInput, setEmployeeInviteSubjectInput] = useState<string>("");
+  const [employeeInviteBodyInput, setEmployeeInviteBodyInput] = useState<string>("");
+  const [adminInviteSubjectInput, setAdminInviteSubjectInput] = useState<string>("");
+  const [adminInviteBodyInput, setAdminInviteBodyInput] = useState<string>("");
+  const [eSignReminderSubjectInput, setESignReminderSubjectInput] = useState<string>("");
+  const [eSignReminderBodyInput, setESignReminderBodyInput] = useState<string>("");
+  const [vestingAlertSubjectInput, setVestingAlertSubjectInput] = useState<string>("");
+  const [vestingAlertBodyInput, setVestingAlertBodyInput] = useState<string>("");
+
   const [googleDocUrlInput, setGoogleDocUrlInput] = useState<string>("");
   const [isSyncingGoogleDoc, setIsSyncingGoogleDoc] = useState<boolean>(false);
 
@@ -257,6 +267,31 @@ export const AdminDashboard: React.FC<Props> = ({
           companySettings.defaultEsopPolicyFileUrl,
         );
       }
+      if (companySettings.employeeInviteSubject) {
+        setEmployeeInviteSubjectInput(companySettings.employeeInviteSubject);
+      }
+      if (companySettings.employeeInviteBody) {
+        setEmployeeInviteBodyInput(companySettings.employeeInviteBody);
+      }
+      if (companySettings.adminInviteSubject) {
+        setAdminInviteSubjectInput(companySettings.adminInviteSubject);
+      }
+      if (companySettings.adminInviteBody) {
+        setAdminInviteBodyInput(companySettings.adminInviteBody);
+      }
+      if (companySettings.eSignReminderSubject) {
+        setESignReminderSubjectInput(companySettings.eSignReminderSubject);
+      }
+      if (companySettings.eSignReminderBody) {
+        setESignReminderBodyInput(companySettings.eSignReminderBody);
+      }
+      if (companySettings.vestingAlertSubject) {
+        setVestingAlertSubjectInput(companySettings.vestingAlertSubject);
+      }
+      if (companySettings.vestingAlertBody) {
+        setVestingAlertBodyInput(companySettings.vestingAlertBody);
+      }
+
       if (companySettings.totalPool && companySettings.currentFMV) {
         setHasInitializedInputs(true);
       }
@@ -276,7 +311,7 @@ export const AdminDashboard: React.FC<Props> = ({
 
   // Corporate settings sub-navigation tab
   const [settingsSubTab, setSettingsSubTab] = useState<
-    "general" | "template" | "signatory" | "policy" | "approvals" | "emails" | "integrations"
+    "general" | "template" | "signatory" | "policy" | "approvals" | "emails" | "email_templates" | "integrations"
   >("general");
 
   // Grant pause/shift editing states
@@ -3960,6 +3995,11 @@ export const AdminDashboard: React.FC<Props> = ({
                           icon: Mail,
                         },
                         {
+                          id: "email_templates",
+                          label: "Email Draft Templates",
+                          icon: Sliders,
+                        },
+                        {
                           id: "integrations",
                           label: "Google Workspace & Backups",
                           icon: Cloud,
@@ -5600,6 +5640,255 @@ export const AdminDashboard: React.FC<Props> = ({
                                 </div>
                               </div>
                             )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* SYSTEM EMAIL DRAFT TEMPLATES SUB-TAB */}
+                      {settingsSubTab === "email_templates" && (
+                        <div className="space-y-8 animate-fadeIn">
+                          <div className="p-8 rounded-[32px] bg-bg-base dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm space-y-6">
+                            <div className="pb-4 border-b border-slate-200 dark:border-slate-800">
+                              <span className="font-extrabold text-text-main tracking-tight text-lg flex items-center gap-2">
+                                <Sliders className="text-brand-primary" size={20} />
+                                Customizable System Email Templates
+                              </span>
+                              <p className="text-xs text-text-muted font-bold uppercase tracking-widest mt-0.5">
+                                Draft custom subjects and body HTML for company-wide notifications & alerts
+                              </p>
+                            </div>
+
+                            {/* Error & Success indicators */}
+                            {settingsSuccess && (
+                              <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-emerald-600 dark:text-emerald-400 text-xs font-bold leading-relaxed">
+                                {settingsSuccess}
+                              </div>
+                            )}
+                            {settingsError && (
+                              <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-rose-500 text-xs font-bold leading-relaxed">
+                                {settingsError}
+                              </div>
+                            )}
+
+                            {/* Tab selector for the 4 emails inside templates tab */}
+                            <div className="grid grid-cols-1 gap-8">
+                              {/* 1. Employee Welcome Invite Email Template card */}
+                              <div className="p-6 rounded-[24px] bg-bg-surface dark:bg-slate-950 border border-slate-150 dark:border-slate-800 space-y-4">
+                                <div className="flex items-center justify-between">
+                                  <div className="space-y-0.5">
+                                    <span className="text-sm font-black text-text-main">
+                                      Employee Welcome Invitation Email
+                                    </span>
+                                    <p className="text-[11px] text-text-muted">
+                                      Sent automatically when a new employee profile is registered in the cap-table
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="space-y-3">
+                                  <div>
+                                    <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-1.5">
+                                      Subject Line
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={employeeInviteSubjectInput}
+                                      onChange={(e) => setEmployeeInviteSubjectInput(e.target.value)}
+                                      className="w-full px-4 py-3 border border-slate-200 dark:border-slate-800 rounded-xl bg-bg-base text-sm text-text-main font-semibold outline-none"
+                                      placeholder="Welcome to Teachmint"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-1.5">
+                                      Email Body (HTML Supported)
+                                    </label>
+                                    <textarea
+                                      rows={6}
+                                      value={employeeInviteBodyInput}
+                                      onChange={(e) => setEmployeeInviteBodyInput(e.target.value)}
+                                      className="w-full px-4 py-3 border border-slate-200 dark:border-slate-800 rounded-xl bg-bg-base text-xs font-mono text-text-main outline-none"
+                                    />
+                                  </div>
+                                  {/* Placeholders badge list */}
+                                  <div className="flex flex-wrap gap-2 pt-1">
+                                    <span className="text-[10px] font-extrabold text-text-muted uppercase">Placeholders:</span>
+                                    {["{{NAME}}", "{{EMAIL}}", "{{PASSWORD}}", "{{DESIGNATION}}", "{{DEPARTMENT}}", "{{PORTAL_URL}}"].map((p) => (
+                                      <span key={p} className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-805 text-[10px] font-mono text-brand-primary font-bold">{p}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* 2. Admin Welcome Invite Email Template card */}
+                              <div className="p-6 rounded-[24px] bg-bg-surface dark:bg-slate-950 border border-slate-150 dark:border-slate-800 space-y-4">
+                                <div className="flex items-center justify-between">
+                                  <div className="space-y-0.5">
+                                    <span className="text-sm font-black text-text-main">
+                                      Administrator Registration Email
+                                    </span>
+                                    <p className="text-[11px] text-text-muted">
+                                      Dispatched when corporate team access is granted to a newly elevated platform admin
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="space-y-3">
+                                  <div>
+                                    <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-1.5">
+                                      Subject Line
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={adminInviteSubjectInput}
+                                      onChange={(e) => setAdminInviteSubjectInput(e.target.value)}
+                                      className="w-full px-4 py-3 border border-slate-200 dark:border-slate-800 rounded-xl bg-bg-base text-sm text-text-main font-semibold outline-none"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-1.5">
+                                      Email Body (HTML Supported)
+                                    </label>
+                                    <textarea
+                                      rows={6}
+                                      value={adminInviteBodyInput}
+                                      onChange={(e) => setAdminInviteBodyInput(e.target.value)}
+                                      className="w-full px-4 py-3 border border-slate-200 dark:border-slate-800 rounded-xl bg-bg-base text-xs font-mono text-text-main outline-none"
+                                    />
+                                  </div>
+                                  {/* Placeholders badge list */}
+                                  <div className="flex flex-wrap gap-2 pt-1">
+                                    <span className="text-[10px] font-extrabold text-text-muted uppercase">Placeholders:</span>
+                                    {["{{EMAIL}}", "{{PASSWORD}}", "{{PORTAL_URL}}"].map((p) => (
+                                      <span key={p} className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-805 text-[10px] font-mono text-brand-primary font-bold">{p}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* 3. E-Sign Reminder Email Template card */}
+                              <div className="p-6 rounded-[24px] bg-bg-surface dark:bg-slate-950 border border-slate-150 dark:border-slate-800 space-y-4">
+                                <div className="flex items-center justify-between">
+                                  <div className="space-y-0.5">
+                                    <span className="text-sm font-black text-text-main">
+                                      Pending E-Sign Signature Reminder
+                                    </span>
+                                    <p className="text-[11px] text-text-muted">
+                                      Sent to stakeholders reminding them to complete digital sign executions of pending options
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="space-y-3">
+                                  <div>
+                                    <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-1.5">
+                                      Subject Line
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={eSignReminderSubjectInput}
+                                      onChange={(e) => setESignReminderSubjectInput(e.target.value)}
+                                      className="w-full px-4 py-3 border border-slate-200 dark:border-slate-800 rounded-xl bg-bg-base text-sm text-text-main font-semibold outline-none"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-1.5">
+                                      Email Body (HTML Supported)
+                                    </label>
+                                    <textarea
+                                      rows={6}
+                                      value={eSignReminderBodyInput}
+                                      onChange={(e) => setESignReminderBodyInput(e.target.value)}
+                                      className="w-full px-4 py-3 border border-slate-200 dark:border-slate-800 rounded-xl bg-bg-base text-xs font-mono text-text-main outline-none"
+                                    />
+                                  </div>
+                                  {/* Placeholders badge list */}
+                                  <div className="flex flex-wrap gap-2 pt-1">
+                                    <span className="text-[10px] font-extrabold text-text-muted uppercase">Placeholders:</span>
+                                    {["{{NAME}}", "{{EMAIL}}", "{{GRANT_ID}}", "{{SHARES}}", "{{PORTAL_URL}}"].map((p) => (
+                                      <span key={p} className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-805 text-[10px] font-mono text-brand-primary font-bold">{p}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* 4. Vesting Alert Email Template card */}
+                              <div className="p-6 rounded-[24px] bg-bg-surface dark:bg-slate-950 border border-slate-150 dark:border-slate-800 space-y-4">
+                                <div className="flex items-center justify-between">
+                                  <div className="space-y-0.5">
+                                    <span className="text-sm font-black text-text-main">
+                                      Vesting Milestone Dispatch Notification
+                                    </span>
+                                    <p className="text-[11px] text-text-muted">
+                                      Triggered automatically on scheduled vesting intervals advising employees of newly vested options details
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="space-y-3">
+                                  <div>
+                                    <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-1.5">
+                                      Subject Line
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={vestingAlertSubjectInput}
+                                      onChange={(e) => setVestingAlertSubjectInput(e.target.value)}
+                                      className="w-full px-4 py-3 border border-slate-200 dark:border-slate-800 rounded-xl bg-bg-base text-sm text-text-main font-semibold outline-none"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] font-bold text-text-muted uppercase tracking-wider mb-1.5">
+                                      Email Body (HTML Supported)
+                                    </label>
+                                    <textarea
+                                      rows={6}
+                                      value={vestingAlertBodyInput}
+                                      onChange={(e) => setVestingAlertBodyInput(e.target.value)}
+                                      className="w-full px-4 py-3 border border-slate-200 dark:border-slate-800 rounded-xl bg-bg-base text-xs font-mono text-text-main outline-none"
+                                    />
+                                  </div>
+                                  {/* Placeholders badge list */}
+                                  <div className="flex flex-wrap gap-2 pt-1">
+                                    <span className="text-[10px] font-extrabold text-text-muted uppercase">Placeholders:</span>
+                                    {["{{NAME}}", "{{EMAIL}}", "{{SHARES_VESTED}}", "{{VESTING_DATE}}", "{{TOTAL_VESTED}}", "{{UNVESTED_REMAINING}}", "{{PORTAL_URL}}"].map((p) => (
+                                      <span key={p} className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-805 text-[10px] font-mono text-brand-primary font-bold">{p}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+
+                            </div>
+
+                            {/* Save triggers panel */}
+                            <div className="pt-6 border-t border-slate-200 dark:border-slate-800 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    setSettingsSuccess("");
+                                    setSettingsError("");
+                                    await updateCompanySettings({
+                                      employeeInviteSubject: employeeInviteSubjectInput,
+                                      employeeInviteBody: employeeInviteBodyInput,
+                                      adminInviteSubject: adminInviteSubjectInput,
+                                      adminInviteBody: adminInviteBodyInput,
+                                      eSignReminderSubject: eSignReminderSubjectInput,
+                                      eSignReminderBody: eSignReminderBodyInput,
+                                      vestingAlertSubject: vestingAlertSubjectInput,
+                                      vestingAlertBody: vestingAlertBodyInput
+                                    }, user.email);
+                                    setSettingsSuccess("Subject lines and custom email templates successfully saved and published!");
+                                    await createAuditLog(
+                                      "Update Email Templates",
+                                      "Admin dynamically customized the system welcome templates, digital vesting reminders, and billing alert dispatch configurations.",
+                                      user.email
+                                    );
+                                  } catch (e: any) {
+                                    setSettingsError(e.message || "Failed to update templates.");
+                                  }
+                                }}
+                                className="px-8 py-4 bg-brand-primary text-white rounded-xl text-xs font-black uppercase tracking-wider hover:scale-[1.01] active:scale-[0.99] transition-all duration-150 shadow-md cursor-pointer"
+                              >
+                                Save All Email Templates
+                              </button>
+                            </div>
+
                           </div>
                         </div>
                       )}
