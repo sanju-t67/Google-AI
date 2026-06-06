@@ -990,34 +990,61 @@ async function startServer() {
     }
   });
 
-  app.put("/api/employees/:id", authenticateMiddleware, requireAdmin, async (req, res) => {
+  app.put("/api/employees/:id", authenticateMiddleware, async (req, res) => {
     try {
+      const user = (req as any).user;
+      if (!user) {
+        return res.status(401).json({ error: "Authentication required." });
+      }
+
       const docRef = doc(db, "employees", req.params.id);
       const snap = await getDoc(docRef);
       if (snap.exists()) {
         const original = snap.data() as Employee;
-        const updated = { ...original, ...req.body };
-        await setDoc(docRef, updated);
-        
-        // Formulate a descriptive details string based on changes
-        const changes: string[] = [];
-        if (req.body.name && req.body.name !== original.name) changes.push(`Name changed to "${req.body.name}"`);
-        if (req.body.department && req.body.department !== original.department) changes.push(`Department changed to "${req.body.department}"`);
-        if (req.body.designation && req.body.designation !== original.designation) changes.push(`Designation changed to "${req.body.designation}"`);
-        if (req.body.grants && JSON.stringify(req.body.grants) !== JSON.stringify(original.grants)) {
-          changes.push(`Grants or Vesting edited`);
-        }
-        if (req.body.documents && req.body.documents.length !== (original.documents || []).length) {
-          const originalDocs = original.documents || [];
-          if (req.body.documents.length > originalDocs.length) {
-            changes.push(`Uploaded legal document "${req.body.documents[req.body.documents.length - 1].name}"`);
-          } else {
-            changes.push(`Removed document`);
+        let updated: Employee;
+
+        if (user.role === "employee") {
+          // Employees can only update their own profile and ONLY the password field
+          if (user.email !== original.email.toLowerCase()) {
+            return res.status(403).json({ error: "Access denied. Employees can only update their own profile." });
           }
+          if (!req.body.password) {
+            return res.status(400).json({ error: "Only password updates are permitted for employees." });
+          }
+          updated = { 
+            ...original, 
+            password: req.body.password 
+          };
+          await setDoc(docRef, updated);
+          await recordLog(req, "Employee Password Change", `Employee ${original.name} (${original.email}) successfully updated their personal portal password.`);
+        } else if (user.role === "admin") {
+          // Admins have full access
+          updated = { ...original, ...req.body };
+          await setDoc(docRef, updated);
+          
+          // Formulate a descriptive details string based on changes
+          const changes: string[] = [];
+          if (req.body.name && req.body.name !== original.name) changes.push(`Name changed to "${req.body.name}"`);
+          if (req.body.department && req.body.department !== original.department) changes.push(`Department changed to "${req.body.department}"`);
+          if (req.body.designation && req.body.designation !== original.designation) changes.push(`Designation changed to "${req.body.designation}"`);
+          if (req.body.grants && JSON.stringify(req.body.grants) !== JSON.stringify(original.grants)) {
+            changes.push(`Grants or Vesting edited`);
+          }
+          if (req.body.documents && req.body.documents.length !== (original.documents || []).length) {
+            const originalDocs = original.documents || [];
+            if (req.body.documents.length > originalDocs.length) {
+              changes.push(`Uploaded legal document "${req.body.documents[req.body.documents.length - 1].name}"`);
+            } else {
+              changes.push(`Removed document`);
+            }
+          }
+          const detailsMsg = changes.length > 0 ? `Modified profile for ${original.name}: ${changes.join(", ")}` : `Updated fields for ${original.name}`;
+          
+          await recordLog(req, "Edit Employee", detailsMsg);
+        } else {
+          return res.status(403).json({ error: "Access denied." });
         }
-        const detailsMsg = changes.length > 0 ? `Modified profile for ${original.name}: ${changes.join(", ")}` : `Updated fields for ${original.name}`;
-        
-        await recordLog(req, "Edit Employee", detailsMsg);
+
         res.json(updated);
       } else {
         res.status(404).json({ error: "Employee not found" });
