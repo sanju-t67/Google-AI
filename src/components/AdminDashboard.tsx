@@ -198,108 +198,6 @@ export const AdminDashboard: React.FC<Props> = ({
   const [googleDocUrlInput, setGoogleDocUrlInput] = useState<string>("");
   const [isSyncingGoogleDoc, setIsSyncingGoogleDoc] = useState<boolean>(false);
 
-  // Email Notification drafts state definitions
-  const [draftTemplateType, setDraftTemplateType] = useState<"welcome" | "esign_reminder" | "vesting" | "admin">("welcome");
-  const [draftSubject, setDraftSubject] = useState("");
-  const [draftBody, setDraftBody] = useState("");
-  const [draftSaveStatus, setDraftSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [draftSaveMessage, setDraftSaveMessage] = useState("");
-
-  React.useEffect(() => {
-    if (!companySettings) return;
-    if (draftTemplateType === "welcome") {
-      setDraftSubject(companySettings.emailTemplateWelcomeSubject ?? "TeachVest Invitation: Access Your Employee ESOP Dashboard");
-      setDraftBody(companySettings.emailTemplateWelcomeBody ?? `<div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #eef2ff; border-radius: 12px; max-width: 600px; border: 1px solid #e0e7ff;">
-  <h2 style="color: #0052ff; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">Welcome to TeachVest, {{STAKEHOLDER_NAME}}!</h2>
-  <p style="font-size: 14px; line-height: 1.5; color: #475569;">An official employee profile has been created for you on the TeachVest platform by your company administrator.</p>
-  
-  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
-    <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Your Login Credentials</p>
-    <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
-    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Login Username:</strong> {{EMPLOYEE_EMAIL}}</p>
-    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Temporary Password:</strong> {{PASSWORD}}</p>
-    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Employee Designation:</strong> {{DESIGNATION}} ({{DEPARTMENT}})</p>
-  </div>
-
-  <p style="font-size: 14px; line-height: 1.5; color: #475569;">To securely inspect, monitor and exercise your vesting ESOP shares, please log in to your employee dashboard using the button below:</p>
-  
-  <div style="text-align: center; margin: 25px 0;">
-    <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Enter TeachVest Portal</a>
-  </div>
-
-  <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; line-height: 1.4;">
-    Security Policy: This is an automated security mail dispatch. If you did not expect these credentials or have security questions, please contact your TeachVest Cap-Table HR administrator immediately.
-  </p>
-</div>`);
-    } else if (draftTemplateType === "esign_reminder") {
-      setDraftSubject(companySettings.emailTemplateReminderSubject ?? "Urgent Action Required: Teachmint ESOP Grant E-Signature Request");
-      setDraftBody(companySettings.emailTemplateReminderBody ?? `<div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #fffbeb; border-radius: 12px; max-width: 600px; border: 1px solid #fef3c7;">
-  <h2 style="color: #b45309; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">Digital Signature Outstanding</h2>
-  <p style="font-size: 14px; line-height: 1.5; color: #475569;">Hello {{STAKEHOLDER_NAME}}, your ESOP Options Allocation Offer <strong>{{GRANT_ID}}</strong> representing <strong>{{SHARES_QUANTITY}} Options</strong> is awaiting your e-signature execution.</p>
-  
-  <div style="background: white; border: 1px solid #fef3c7; border-radius: 12px; padding: 18px; margin: 20px 0;">
-    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Grant Reference:</strong> {{GRANT_ID}}</p>
-    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Strike Option Price:</strong> INR {{STRIKE_PRICE}}</p>
-    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Sign-off Status:</strong> Pending Stakeholder Signature</p>
-  </div>
-
-  <p style="font-size: 14px; line-height: 1.5; color: #475569;">Please log in securely to complete signing and execute your digital ESOP Grant Certificate contract:</p>
-  
-  <div style="text-align: center; margin: 25px 0;">
-    <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Review & E-Sign Offer Letter</a>
-  </div>
-</div>`);
-    } else if (draftTemplateType === "vesting") {
-      setDraftSubject(companySettings.emailTemplateVestingSubject ?? "Teachmint options vested today! ({{VESTED_DATE}})");
-      setDraftBody(companySettings.emailTemplateVestingBody ?? `<div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #eef2ff; border-radius: 12px; max-width: 600px; border: 1px solid #e0e7ff;">
-  <h3 style="color: #6366f1; margin-bottom: 12px; font-weight: 800; font-family: sans-serif;">Automated Option Vesting Notification</h3>
-  <p style="font-size: 14px; line-height: 1.6; color: #475569; font-family: sans-serif;">
-    Hi <strong>{{STAKEHOLDER_NAME}}</strong>,
-  </p>
-  <p style="font-size: 14px; line-height: 1.6; color: #475569; font-family: sans-serif;">
-    We are happy to inform you that <strong>{{VESTED_SHARES}}</strong> options got vested on <strong>{{VESTED_DATE}}</strong> for your grant under <strong>Teachmint Technologies Private Limited Employees’ Stock Option Plan 2020</strong>.
-  </p>
-  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
-    <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Vesting Milestone Stats</p>
-    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Milestone Date:</strong> {{VESTED_DATE}}</p>
-    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Newly Vested Options:</strong> {{VESTED_SHARES}} units</p>
-    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Cumulative Vested Options:</strong> {{CUMULATIVE_VESTED_SHARES}} units</p>
-  </div>
-  <div style="text-align: center; margin: 25px 0;">
-    <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0052ff; color: white; padding: 12px 24px; border-radius: 10px; font-weight: bold; text-decoration: none; font-size: 13px; font-family: sans-serif;">Login to TeachVest Dashboard</a>
-  </div>
-  <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; font-family: sans-serif;">
-    Regards,<br/>
-    <strong>Teachmint HR Operations</strong>
-  </p>
-</div>`);
-    } else if (draftTemplateType === "admin") {
-      setDraftSubject(companySettings.emailTemplateAdminSubject ?? "TeachVest Invitation: Administrator Access Granted");
-      setDraftBody(companySettings.emailTemplateAdminBody ?? `<div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #f8fafc; border-radius: 12px; max-width: 600px; border: 1px solid #e2e8f0;">
-  <h2 style="color: #0052ff; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">TeachVest Administrator Access Activated</h2>
-  <p style="font-size: 14px; line-height: 1.5; color: #475569;">You have been granted official Administrator privileges on the TeachVest Capital Cap-Table and ESOP Management System.</p>
-  
-  <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
-    <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Your Administrator Credentials</p>
-    <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
-    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Login Username:</strong> {{ADMIN_EMAIL}}</p>
-    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Temporary Password:</strong> {{PASSWORD}}</p>
-    <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Assigned Access Role:</strong> Platform Administrator / Board Observer</p>
-  </div>
-
-  <p style="font-size: 14px; line-height: 1.5; color: #475569;">Use corporate administrator portal access to define stock metrics, edit employee grants, attach critical legal documents and supervise active vestings.</p>
-  
-  <div style="text-align: center; margin: 25px 0;">
-    <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0052ff; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(0, 82, 255, 0.2);">Enter Admin Dashboard</a>
-  </div>
-
-  <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-top: 20px; line-height: 1.4;">
-    Security Alert: Keep these credentials stored securely. Do not share your login details with any unverified accounts. All access sessions are logged for audit compliance.
-  </p>
-</div>`);
-    }
-  }, [draftTemplateType, companySettings]);
-
   // High-fidelity local PDF template editor states
   const [pdfEditorSection, setPdfEditorSection] = useState<
     "header" | "content" | "footer"
@@ -378,7 +276,7 @@ export const AdminDashboard: React.FC<Props> = ({
 
   // Corporate settings sub-navigation tab
   const [settingsSubTab, setSettingsSubTab] = useState<
-    "general" | "template" | "signatory" | "policy" | "approvals" | "emails" | "integrations" | "emailTemplates"
+    "general" | "template" | "signatory" | "policy" | "approvals" | "emails" | "integrations"
   >("general");
 
   // Grant pause/shift editing states
@@ -1127,73 +1025,48 @@ export const AdminDashboard: React.FC<Props> = ({
         ? grant.totalShares.toLocaleString()
         : "0";
 
-      const variables = {
-        "{{STAKEHOLDER_NAME}}": emp.name,
-        "{{EMPLOYEE_EMAIL}}": emp.email,
-        "{{PASSWORD}}": emp.password || "login123",
-        "{{DESIGNATION}}": emp.designation || "",
-        "{{DEPARTMENT}}": emp.department || "",
-        "{{PORTAL_URL}}": window.location.origin + "/?role=employee&email=" + encodeURIComponent(emp.email),
-        "{{GRANT_ID}}": grantId,
-        "{{SHARES_QUANTITY}}": totalSharesFormatted,
-        "{{STRIKE_PRICE}}": String(grant?.strikePrice || 10)
-      };
-
-      const replaceTokensClient = (template: string, vars: Record<string, string>) => {
-        let result = template;
-        for (const [key, value] of Object.entries(vars)) {
-          const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          result = result.replace(new RegExp(escapedKey, 'g'), value || '');
-        }
-        return result;
-      };
-
       if (emailType === "welcome") {
-        const rawSub = companySettings.emailTemplateWelcomeSubject || `TeachVest Invitation: Access Your Employee ESOP Dashboard`;
-        const rawBody = companySettings.emailTemplateWelcomeBody || `
+        subject = `TeachVest Invitation: Access Your Employee ESOP Dashboard`;
+        body = `
           <div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #eef2ff; border-radius: 12px; max-width: 600px; border: 1px solid #e0e7ff;">
-            <h2 style="color: #0a52f7; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">Welcome to TeachVest, {{STAKEHOLDER_NAME}}!</h2>
+            <h2 style="color: #0a52f7; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">Welcome to TeachVest, ${emp.name}!</h2>
             <p style="font-size: 14px; line-height: 1.5; color: #475569;">An official employee profile has been created for you on the TeachVest platform by your company administrator.</p>
             
             <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
                <p style="margin: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.1em;">Your Login Credentials</p>
                <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
-               <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Login Username:</strong> {{EMPLOYEE_EMAIL}}</p>
-               <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Temporary Password:</strong> {{PASSWORD}}</p>
-               <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Employee Designation:</strong> {{DESIGNATION}} ({{DEPARTMENT}})</p>
+               <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Login Username:</strong> ${emp.email}</p>
+               <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Temporary Password:</strong> ${emp.password || "login123"}</p>
+               <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Employee Designation:</strong> ${emp.designation} (${emp.department})</p>
             </div>
 
             <p style="font-size: 14px; line-height: 1.5; color: #475569;">To securely inspect, monitor and manage your vesting ESOP shares, please log in to your employee dashboard:</p>
             
             <div style="text-align: center; margin: 25px 0;">
-              <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0a52f7; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(10, 82, 247, 0.2);">Enter TeachVest Portal</a>
+              <a href="/?role=employee&email=${encodeURIComponent(emp.email)}" style="display: inline-block; background: #0a52f7; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(10, 82, 247, 0.2);">Enter TeachVest Portal</a>
             </div>
           </div>
-        `;
-        subject = replaceTokensClient(rawSub, variables);
-        body = replaceTokensClient(rawBody, variables).trim();
+        `.trim();
       } else {
-        const rawSub = companySettings.emailTemplateReminderSubject || `Urgent Action Required: Teachmint ESOP Grant E-Signature Request`;
-        const rawBody = companySettings.emailTemplateReminderBody || `
+        subject = `Urgent Action Required: Teachmint ESOP Grant E-Signature Request`;
+        body = `
           <div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #fffbeb; border-radius: 12px; max-width: 600px; border: 1px solid #fef3c7;">
             <h2 style="color: #b45309; margin-bottom: 8px; font-weight: 800; letter-spacing: -0.02em;">Digital Signature Outstanding</h2>
-            <p style="font-size: 14px; line-height: 1.5; color: #475569;">Hello {{STAKEHOLDER_NAME}}, your ESOP Options Allocation Offer <strong>{{GRANT_ID}}</strong> representing <strong>{{SHARES_QUANTITY}} Options</strong> is awaiting your e-signature execution.</p>
+            <p style="font-size: 14px; line-height: 1.5; color: #475569;">Hello ${emp.name}, your ESOP Options Allocation Offer <strong>${grantId}</strong> representing <strong>${totalSharesFormatted} Options</strong> is awaiting your e-signature execution.</p>
             
             <div style="background: white; border: 1px solid #fef3c7; border-radius: 12px; padding: 18px; margin: 20px 0;">
-              <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Grant Reference:</strong> {{GRANT_ID}}</p>
-              <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Strike Option Price:</strong> INR {{STRIKE_PRICE}}</p>
+              <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Grant Reference:</strong> ${grantId}</p>
+              <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Strike Option Price:</strong> INR ${grant?.strikePrice || 10}</p>
               <p style="margin: 6px 0; font-size: 14px; color: #334155;"><strong>Sign-off Status:</strong> Pending Stakeholder Signature</p>
             </div>
 
             <p style="font-size: 14px; line-height: 1.5; color: #475569;">Please log in securely to complete signing and execute your digital ESOP Grant Certificate contract:</p>
             
             <div style="text-align: center; margin: 25px 0;">
-              <a href="{{PORTAL_URL}}" style="display: inline-block; background: #0a52f7; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(10, 82, 247, 0.2);">Review & E-Sign Offer Letter</a>
+              <a href="/?role=employee&email=${encodeURIComponent(emp.email)}" style="display: inline-block; background: #0a52f7; color: white; padding: 14px 28px; border-radius: 12px; font-weight: bold; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(10, 82, 247, 0.2);">Review & E-Sign Offer Letter</a>
             </div>
           </div>
-        `;
-        subject = replaceTokensClient(rawSub, variables);
-        body = replaceTokensClient(rawBody, variables).trim();
+        `.trim();
       }
 
       await sendEmailWithOptionalGmail(
@@ -4087,11 +3960,6 @@ export const AdminDashboard: React.FC<Props> = ({
                           icon: Mail,
                         },
                         {
-                          id: "emailTemplates",
-                          label: "Trigger Email Templates",
-                          icon: Edit3 || FileText,
-                        },
-                        {
                           id: "integrations",
                           label: "Google Workspace & Backups",
                           icon: Cloud,
@@ -6055,290 +5923,6 @@ export const AdminDashboard: React.FC<Props> = ({
                                   </button>
                                 </div>
                               </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {settingsSubTab === "emailTemplates" && (
-                        <div className="space-y-8 animate-fadeIn">
-                          <div className="p-8 rounded-[32px] bg-bg-base dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm space-y-6">
-                            <div className="flex items-start justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
-                              <div>
-                                <span className="font-extrabold text-text-main tracking-tight text-lg flex items-center gap-2">
-                                  <PenTool className="text-brand-primary" size={20} />
-                                  Automated Trigger Email Templates Editor
-                                </span>
-                                <p className="text-xs text-text-muted font-bold uppercase tracking-widest mt-0.5">
-                                  Draft custom HTML email content and subjects for system triggers
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* Notifications selection radio grid */}
-                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 pt-2">
-                              {[
-                                {
-                                  id: "welcome",
-                                  title: "Welcome Invitation",
-                                  desc: "Dispatched upon employee credentials initialization.",
-                                  icon: Mail
-                                },
-                                {
-                                  id: "esign_reminder",
-                                  title: "E-Signature Reminder",
-                                  desc: "Manual or bulk alert for outstanding grant signatures.",
-                                  icon: AlertCircle
-                                },
-                                {
-                                  id: "vesting",
-                                  title: "Vesting Alerts (9 AM)",
-                                  desc: "Sent automatically on option vesting dates.",
-                                  icon: CheckCircle2
-                                },
-                                {
-                                  id: "admin",
-                                  title: "Admin Onboarding",
-                                  desc: "Triggered on creation of a new administrator.",
-                                  icon: Settings
-                                }
-                              ].map((item) => {
-                                const isSel = draftTemplateType === item.id;
-                                return (
-                                  <button
-                                    key={item.id}
-                                    type="button"
-                                    onClick={() => setDraftTemplateType(item.id as any)}
-                                    className={`p-5 rounded-2xl border text-left flex flex-col justify-between transition-all duration-200 h-full ${
-                                      isSel
-                                        ? "bg-brand-primary/5 border-brand-primary ring-2 ring-brand-primary/20"
-                                        : "bg-bg-surface dark:bg-slate-950 border-slate-200/60 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
-                                    }`}
-                                  >
-                                    <div className="flex items-center justify-between mb-3 w-full">
-                                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                                        isSel ? "bg-brand-primary text-white" : "bg-slate-100 dark:bg-slate-800 text-text-muted"
-                                      }`}>
-                                        <item.icon size={16} />
-                                      </div>
-                                      {isSel && (
-                                        <span className="w-2 h-2 rounded-full bg-brand-primary animate-pulse" />
-                                      )}
-                                    </div>
-                                    <div>
-                                      <h4 className={`text-xs font-black uppercase tracking-wider ${
-                                        isSel ? "text-brand-primary" : "text-text-main"
-                                      }`}>
-                                        {item.title}
-                                      </h4>
-                                      <p className="text-[10px] text-text-muted mt-1 leading-relaxed">
-                                        {item.desc}
-                                      </p>
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-
-                            {/* Split template editor / real-time live preview */}
-                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-4">
-                              
-                              {/* Left Columns - Inputs */}
-                              <div className="lg:col-span-7 space-y-6">
-                                <div className="space-y-2">
-                                  <label className="text-[11px] font-extrabold text-brand-primary uppercase tracking-[0.1em] block">
-                                    Email Subject Template
-                                  </label>
-                                  <input
-                                    type="text"
-                                    value={draftSubject}
-                                    onChange={(e) => setDraftSubject(e.target.value)}
-                                    placeholder="Enter subject template line..."
-                                    className="w-full px-5 py-4 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-800 bg-bg-surface dark:bg-slate-950 text-text-main outline-none focus:ring-4 focus:ring-brand-primary/5 transition-all"
-                                  />
-                                </div>
-
-                                <div className="space-y-2">
-                                  <div className="flex justify-between items-center">
-                                    <label className="text-[11px] font-extrabold text-brand-primary uppercase tracking-[0.1em] block">
-                                      HTML Body Document
-                                    </label>
-                                    <span className="text-[10px] text-text-muted font-bold">Supports standard inline CSS & placeholders</span>
-                                  </div>
-                                  <textarea
-                                    value={draftBody}
-                                    onChange={(e) => setDraftBody(e.target.value)}
-                                    rows={18}
-                                    className="w-full px-5 py-4 font-mono text-xs leading-relaxed rounded-xl border border-slate-200 dark:border-slate-800 bg-bg-surface dark:bg-slate-950 text-text-main outline-none focus:ring-4 focus:ring-brand-primary/5 transition-all resize-y"
-                                    placeholder="Enter HTML email representation coding..."
-                                  />
-                                </div>
-
-                                {/* Placeholder Variables Quick Tags Injection Board */}
-                                <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-150 dark:border-slate-800 space-y-3">
-                                  <span className="text-[10px] font-black uppercase tracking-wider text-text-muted block">
-                                    Supported Placeholder Tags (Click to Insert)
-                                  </span>
-                                  <div className="flex flex-wrap gap-2">
-                                    {[
-                                      { tag: "{{STAKEHOLDER_NAME}}", desc: "Full Name of Employee" },
-                                      { tag: "{{EMPLOYEE_EMAIL}}", desc: "Corporate email identifier" },
-                                      { tag: "{{PASSWORD}}", desc: "Credentials secret value" },
-                                      { tag: "{{DESIGNATION}}", desc: "Corporate Job role designation" },
-                                      { tag: "{{DEPARTMENT}}", desc: "Assigned department category" },
-                                      { tag: "{{PORTAL_URL}}", desc: "Secure Direct login interface locator" },
-                                      { tag: "{{GRANT_ID}}", desc: "ESOP option contract record number" },
-                                      { tag: "{{SHARES_QUANTITY}}", desc: "Sum-total options allocated" },
-                                      { tag: "{{STRIKE_PRICE}}", desc: "Standard exercise conversion INR rate" },
-                                      { tag: "{{VESTED_SHARES}}", desc: "Options vesting in active sweep" },
-                                      { tag: "{{VESTED_DATE}}", desc: "Calendar date milestone of vesting" },
-                                      { tag: "{{CUMULATIVE_VESTED_SHARES}}", desc: "Total sum vested options" },
-                                      { tag: "{{ADMIN_NAME}}", desc: "Admin user name representation" },
-                                      { tag: "{{ADMIN_EMAIL}}", desc: "Admin target registered login email" }
-                                    ].map((v) => {
-                                      const isApplicable = 
-                                        draftTemplateType === "welcome"
-                                          ? ["{{STAKEHOLDER_NAME}}", "{{EMPLOYEE_EMAIL}}", "{{PASSWORD}}", "{{DESIGNATION}}", "{{DEPARTMENT}}", "{{PORTAL_URL}}"].includes(v.tag)
-                                          : draftTemplateType === "esign_reminder"
-                                          ? ["{{STAKEHOLDER_NAME}}", "{{GRANT_ID}}", "{{SHARES_QUANTITY}}", "{{STRIKE_PRICE}}", "{{PORTAL_URL}}"].includes(v.tag)
-                                          : draftTemplateType === "vesting"
-                                          ? ["{{STAKEHOLDER_NAME}}", "{{VESTED_SHARES}}", "{{VESTED_DATE}}", "{{CUMULATIVE_VESTED_SHARES}}", "{{PORTAL_URL}}"].includes(v.tag)
-                                          : ["{{ADMIN_NAME}}", "{{ADMIN_EMAIL}}", "{{PASSWORD}}", "{{PORTAL_URL}}"].includes(v.tag);
-                                      return (
-                                        <button
-                                          key={v.tag}
-                                          type="button"
-                                          disabled={!isApplicable}
-                                          onClick={() => {
-                                            setDraftBody(prev => prev + " " + v.tag);
-                                          }}
-                                          title={v.desc}
-                                          className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold font-mono border transition-all ${
-                                            isApplicable
-                                              ? "bg-brand-primary/10 hover:bg-brand-primary/25 border-brand-primary/20 text-brand-primary cursor-pointer hover:scale-[1.03]"
-                                              : "bg-slate-100/50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60"
-                                          }`}
-                                        >
-                                          {v.tag}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Right Columns - Live Sandbox Rendering Render */}
-                              <div className="lg:col-span-5 flex flex-col space-y-4">
-                                <span className="text-[11px] font-extrabold text-brand-primary uppercase tracking-[0.1em] block">
-                                  Live Real-Time Email Render Sandbox
-                                </span>
-                                
-                                <div className="flex-1 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden min-h-[400px]">
-                                  {/* Subject bar mockup */}
-                                  <div className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-5 py-4 space-y-1.5">
-                                    <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
-                                      <span className="font-bold text-slate-600 dark:text-slate-400">Subject:</span>
-                                      <span className="font-bold text-slate-800 dark:text-slate-200 font-sans">
-                                        {draftSubject ? draftSubject.replaceAll("{{STAKEHOLDER_NAME}}", "Jane Doe").replaceAll("{{VESTED_DATE}}", "2026-06-05") : "(No subject defined)"}
-                                      </span>
-                                    </div>
-                                    <div className="flex items-center gap-2 text-[10px] text-slate-400">
-                                      <span className="font-bold">From:</span>
-                                      <span className="font-mono bg-slate-200/50 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[9px] text-slate-600 dark:text-slate-300">
-                                        {companySettings.senderEmailId || "hr@teachmint.com"}
-                                      </span>
-                                    </div>
-                                  </div>
-
-                                  {/* Frame sandbox representation */}
-                                  <div className="flex-1 p-4 bg-slate-150 dark:bg-slate-900/40 overflow-y-auto max-h-[500px]">
-                                    {draftBody ? (
-                                      <div 
-                                        className="bg-white rounded-xl shadow-inner max-w-full overflow-x-hidden"
-                                        dangerouslySetInnerHTML={{
-                                          __html: (() => {
-                                            const mockVars: Record<string, string> = {
-                                              "{{STAKEHOLDER_NAME}}": "Jane Doe",
-                                              "{{EMPLOYEE_EMAIL}}": "jane.doe@teachmint.com",
-                                              "{{PASSWORD}}": "tm_secure789",
-                                              "{{DESIGNATION}}": "Lead Software Engineer",
-                                              "{{DEPARTMENT}}": "Engineering",
-                                              "{{PORTAL_URL}}": window.location.origin + "/?role=employee&email=jane.doe%40teachmint.com",
-                                              "{{GRANT_ID}}": "GR-TM-2025-103",
-                                              "{{SHARES_QUANTITY}}": "25,000",
-                                              "{{STRIKE_PRICE}}": "10",
-                                              "{{VESTED_SHARES}}": "1,250",
-                                              "{{VESTED_DATE}}": "2026-06-05",
-                                              "{{CUMULATIVE_VESTED_SHARES}}": "3,750",
-                                              "{{ADMIN_NAME}}": "John Smith",
-                                              "{{ADMIN_EMAIL}}": "john.smith@teachmint.com"
-                                            };
-                                            let result = draftBody;
-                                            for (const [key, value] of Object.entries(mockVars)) {
-                                              result = result.replace(new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), value);
-                                            }
-                                            return result;
-                                          })()
-                                        }}
-                                      />
-                                    ) : (
-                                      <div className="h-full flex flex-col items-center justify-center p-8 text-center text-text-muted space-y-2">
-                                        <Mail size={32} className="opacity-40 animate-pulse" />
-                                        <p className="text-xs font-bold uppercase tracking-wider">Empty Template Content</p>
-                                        <p className="text-[10px]">Please insert HTML above to instantly inspect interactive desktop/mobile preview.</p>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Alert/Status banner */}
-                            {draftSaveMessage && (
-                              <div className={`p-4 rounded-xl text-xs font-extrabold flex items-center gap-2 animate-fadeIn ${
-                                draftSaveStatus === "saved"
-                                  ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
-                                  : "bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400"
-                              }`}>
-                                <AlertCircle size={16} />
-                                {draftSaveMessage}
-                              </div>
-                            )}
-
-                            {/* Action footer */}
-                            <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-800 text-xs">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (confirm("Restore this template type back to TeachVest default layout system values?")) {
-                                    if (draftTemplateType === "welcome") {
-                                      setDraftSubject("TeachVest Invitation: Access Your Employee ESOP Dashboard");
-                                      setDraftBody(DEFAULT_SETTINGS.emailTemplateWelcomeBody);
-                                    } else if (draftTemplateType === "esign_reminder") {
-                                      setDraftSubject("Urgent Action Required: Teachmint ESOP Grant E-Signature Request");
-                                      setDraftBody(DEFAULT_SETTINGS.emailTemplateReminderBody);
-                                    } else if (draftTemplateType === "vesting") {
-                                      setDraftSubject("Teachmint options vested today! ({{VESTED_DATE}})");
-                                      setDraftBody(DEFAULT_SETTINGS.emailTemplateVestingBody);
-                                    } else if (draftTemplateType === "admin") {
-                                      setDraftSubject("TeachVest Invitation: Administrator Access Granted");
-                                      setDraftBody(DEFAULT_SETTINGS.emailTemplateAdminBody);
-                                    }
-                                  }
-                                }}
-                                className="px-5 py-3 rounded-xl font-black uppercase text-rose-600 hover:bg-rose-600/5 transition-all"
-                              >
-                                Restore System Defaults
-                              </button>
-
-                              <button
-                                type="button"
-                                disabled={draftSaveStatus === "saving"}
-                                onClick={handleSaveEmailTemplate}
-                                className="px-8 py-3.5 bg-brand-primary text-white rounded-xl font-black uppercase tracking-wider shadow-xl shadow-brand-primary/20 hover:scale-[1.02] active:scale-[0.98] outline-none transition-all flex items-center gap-2"
-                              >
-                                {draftSaveStatus === "saving" ? "Preserving..." : "Save Custom Template"}
-                              </button>
                             </div>
                           </div>
                         </div>
